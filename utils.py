@@ -123,35 +123,48 @@ def reorder_channels_chbmit(raw):
 
 def run_preprocessing(
     raw,
-    n_ica_components,
+    n_ica_components=18,
     freq_l=1.0,
     freq_h=30.0,
     avg_ref=True,
-    apply_ica=True,
+    apply_pca = True,
+    apply_ica=False,
     informax=False,
 ):
     """Runs preprocessing on given mne.raw instance."""
+    if apply_ica and apply_pca:
+        raise ValueError("Values of apply_pca and apply_ica cannot both be True! Choose only one method of artifact removal.")
+
     raw.load_data()
     raw.filter(l_freq=freq_l, h_freq=freq_h, h_trans_bandwidth=1)
     if avg_ref:
         raw.set_eeg_reference()
-    if informax:
-        ica = ICA(
-            n_components=n_ica_components,
-            max_iter="auto",
-            random_state=97,
-            method="infomax",
-            fit_params=dict(extended=True),
-        )
-    else:
-        ica = ICA(n_components=n_ica_components)
-    ica.fit(raw)
-    ic_labels = label_components(raw, ica, method="iclabel")
     if apply_ica:
+        if informax:
+            ica = ICA(
+                n_components=n_ica_components,
+                max_iter="auto",
+                random_state=97,
+                method="infomax",
+                fit_params=dict(extended=True),
+            )
+        else:
+            ica = ICA(n_components=n_ica_components)
+        ica.fit(raw)
+        ic_labels = label_components(raw, ica, method="iclabel")
         labels = np.array(ic_labels["labels"])
         ica.exclude = np.where((labels != "other") & (labels != "brain"))[0].tolist()
         ica.apply(raw)
-    return ica, ic_labels, raw
+        
+    elif apply_pca:
+        pca = PCA()
+        pca.fit(raw._data)
+        components = pca.components_
+        mu = pca.mean_
+        transform_raw = pca.transform(raw._data)
+        raw._data = np.squeeze(mu + transform_raw[:,2:] @ components[2:])
+
+    return raw
 
 
 def load_and_dump_channels(filepath):
@@ -187,10 +200,10 @@ def load_and_dump_channels(filepath):
     return data_raw
 
 
-def preprocess_dataset(subjects_with_seizures, dataset_dirpath, preprocessed_dirpath):
+def preprocess_dataset(subjects_with_seizures_path, dataset_dirpath, preprocessed_dirpath):
     """Runs full preprocessing on the dataset cointained in the folder.
     Args:  
-        subject_with_seizures: path to a text file containing recordings with seizures.
+        subject_with_seizures_path: path to a text file containing recordings with seizures.
     The names have to be a row vector, with every row named patient_folder/recording_name.edf.
 
         dataset_path: path to a folder containing all patient folders.
@@ -198,6 +211,7 @@ def preprocess_dataset(subjects_with_seizures, dataset_dirpath, preprocessed_dir
         preprocessed_dirpath: path to folder in which preprocessed files will be saved.
 
     """
+    subjects_with_seizures = [subject[:-1] for subject in open(subjects_with_seizures_path,'r').readlines()]
     for subject in subjects_with_seizures:
         try:
             subject_path = os.path.join(dataset_dirpath, subject)
@@ -207,11 +221,10 @@ def preprocess_dataset(subjects_with_seizures, dataset_dirpath, preprocessed_dir
         except:
             print(f"Subject {subject} not found.")
             continue
-        if raw_file is None:
-            continue
+        
         reorder_channels_chbmit(raw_file)
-        n_components = len(raw_file.ch_names)
-        ica, labels, raw_instance = run_preprocessing(raw_file, n_components)
+        
+        raw_instance = run_preprocessing(raw_file, apply_pca=True,freq_l=2)
         save_path = os.path.join(preprocessed_dirpath, subject)
         if not os.path.exists(os.path.split(save_path)[0]):
             os.mkdir(os.path.split(save_path)[0])
@@ -297,3 +310,16 @@ def extract_training_data_and_labels(
         # savepath_ictal_labels_e = f"{savepath}_ictal_labels_e_{n}"
         # np.save()
     return interictal_features, interictal_event_labels, interictal_event_time_labels
+
+def run_prep(raw,line_freq,ransac = False, channel_wise = False):
+    sfreq = raw.info['sfreq']
+    prep_params = {
+        "ref_chs": "eeg",
+        "reref_chs": "eeg",
+        "line_freqs": np.arange(line_freq, sfreq / 2, line_freq),
+    }
+    raw.load_data()
+    montage = raw.get_montage()
+    prep = PrepPipeline(raw, prep_params,montage,ransac=ransac,channel_wise=channel_wise)
+    prep.fit()
+    return prep
