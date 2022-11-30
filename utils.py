@@ -1,14 +1,13 @@
 import mne
-import numpy as np
-from sklearn.decomposition import PCA
-from mne_icalabel import label_components
-from matplotlib import pyplot as plt
-from matplotlib.widgets import Slider
-from pyprep.prep_pipeline import PrepPipeline
-from scipy import signal
-from mne.preprocessing import ICA
 import re
 import os
+import numpy as np
+from pathlib import Path
+from sklearn.decomposition import PCA
+from mne_icalabel import label_components
+from pyprep.prep_pipeline import PrepPipeline
+from mne.preprocessing import ICA
+
 
 ch_demanded_order = [
     "Fp1",
@@ -116,7 +115,7 @@ def reorder_channels_chbmit(raw):
     raw.rename_channels(ch_map)
     raw.reorder_channels(ch_demanded_order)
     montage = mne.channels.read_custom_montage(
-        r"A:\Program Files\MATLAB\R2020a\eeglab2022.1\my_locs\chb_mit_ch_locs.loc"
+        Path("sano_eeg/data/chb_mit_ch_locs.loc")
     )
     raw.set_montage(montage)
 
