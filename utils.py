@@ -115,7 +115,7 @@ def reorder_channels_chbmit(raw):
     raw.rename_channels(ch_map)
     raw.reorder_channels(ch_demanded_order)
     montage = mne.channels.read_custom_montage(
-        Path("sano_eeg/data/chb_mit_ch_locs.loc")
+        Path("data/chb_mit_ch_locs.loc")
     )
     raw.set_montage(montage)
 
