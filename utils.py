@@ -1,6 +1,7 @@
 import mne
 import re
 import os
+import pandas as pd
 import numpy as np
 from pathlib import Path
 from sklearn.decomposition import PCA
@@ -362,3 +363,61 @@ def run_prep(raw, line_freq, ransac=False, channel_wise=False):
     )
     prep.fit()
     return prep
+
+
+def get_patient_annotations(path_to_file : Path, savedir : Path):
+    raw_txt = open(path_to_file,'r')
+    raw_txt_lines = raw_txt.readlines()
+    event_dict_start = dict()
+    event_dict_stop = dict()
+    p = '[\d]+'
+    for n,line in enumerate(raw_txt_lines):
+        if "File Name" in line:
+            current_file_name = line.split(': ')[1][:-1]
+        if "Number of Seizures in File" in line:
+            num_of_seizures = int(line[-2:])
+            if  num_of_seizures > 0:
+                events_in_recording = raw_txt_lines[n+1:n+num_of_seizures*2+1]
+                for event in events_in_recording:
+                    if "Start Time" in event:
+                        sub_ev = event.split(': ')[1]
+                        time_value = int(re.search(p,sub_ev).group())
+                
+                        if not current_file_name in event_dict_start.keys():
+                            event_dict_start[current_file_name] = [time_value]
+                        else:
+                            event_dict_start[current_file_name].append(time_value)
+                    elif "End Time" in event:
+                        sub_ev = event.split(': ')[1]
+                        
+                        time_value = int(re.search(p,sub_ev).group())
+                        
+                        if not current_file_name in event_dict_stop.keys():
+                            event_dict_stop[current_file_name] = [time_value]
+                            
+                        else:
+                            event_dict_stop[current_file_name].append(time_value)
+    df = pd.DataFrame.from_dict(event_dict_start,orient='index')
+    col_list = []
+    for n in range(1,len(df.columns)+1):
+        col_list.append(f'Seizure {n}')
+    df_start = pd.DataFrame.from_dict(event_dict_start,orient='index',columns=col_list)
+    df_end = pd.DataFrame.from_dict(event_dict_stop,orient='index',columns=col_list)
+    patient_id = current_file_name.split('_')[0]
+    if not os.path.exists(savedir):
+        os.mkdir(savedir)
+    dst_dir_start = os.path.join(savedir,f"{patient_id}_start.csv")
+    dst_dir_stop = os.path.join(savedir,f"{patient_id}_stop.csv")
+    pd.DataFrame.to_csv(df_start,dst_dir_start,index_label=False) 
+    pd.DataFrame.to_csv(df_end,dst_dir_stop,index_label=False)
+
+def get_annotation_files(dataset_path):
+    patient_folders = os.listdir(dataset_path)
+    for folder in patient_folders:
+        patient_folder_path = os.path.join(dataset_path,folder)
+        if os.path.isdir(patient_folder_path):
+            patient_files = os.listdir(patient_folder_path)
+            for filename in patient_files:
+                if "summary" in filename:
+                    annotation_path = os.path.join(patient_folder_path,filename)
+                    get_patient_annotations(annotation_path,Path("event_tables"))
