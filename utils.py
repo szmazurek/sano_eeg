@@ -272,6 +272,7 @@ def extract_training_data_and_labels(
     """Function to extract seizure periods and preictal perdiods into samples ready to be put into graph neural network."""
     for n, start_ev in enumerate(start_ev_array):
         seizure_lookback = seizure_lookback
+        
         prev_event_time = start_ev - stop_ev_array[n - 1] if n > 0 else start_ev
 
         if prev_event_time > seizure_lookback:
