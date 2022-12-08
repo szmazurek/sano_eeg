@@ -254,7 +254,7 @@ def prepare_timestep_label(array, timestep, overlap):
     time_to_seizure = array.shape[2]
     seconds = [
         (time_to_seizure - i) / 256
-        for i in range(timestep, array.shape[2], timestep - overlap)
+        for i in range(timestep, array.shape[2]+1, timestep - overlap)
     ]
     return np.array(seconds)
 
@@ -272,7 +272,7 @@ def extract_training_data_and_labels(
     """Function to extract seizure periods and preictal perdiods into samples ready to be put into graph neural network."""
     for n, start_ev in enumerate(start_ev_array):
         seizure_lookback = seizure_lookback
-        
+
         prev_event_time = start_ev - stop_ev_array[n - 1] if n > 0 else start_ev
 
         if prev_event_time > seizure_lookback:
@@ -315,7 +315,7 @@ def extract_training_data_and_labels(
       
         seizure_event_labels = np.ones(seizure_features.shape[0])
 
-        seizure_event_time_labels = np.full(seizure_features.shape[0], -1)
+        seizure_event_time_labels = np.full(seizure_features.shape[0], 0)
         if n == 0:
             full_interictal_features = interictal_features
             full_interictal_event_labels = interictal_event_labels
@@ -350,7 +350,7 @@ def extract_training_data_and_labels(
     
     recording_labels_array = np.concatenate(
         (full_interictal_event_labels, full_seizure_event_labels), axis=0
-    )
+    ).astype(np.int32)
     
     recording_timestep_array = np.concatenate(
         (full_interictal_event_time_labels, full_seizure_event_time_labels), axis=0
