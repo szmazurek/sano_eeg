@@ -254,16 +254,16 @@ def prepare_timestep_label(array, timestep, overlap):
     time_to_seizure = array.shape[2]
     seconds = [
         (time_to_seizure - i) / 256
-        for i in range(timestep, array.shape[2], timestep - overlap)
+        for i in range(timestep, array.shape[2]+1, timestep - overlap)
     ]
     return np.array(seconds)
 
 
 def extract_training_data_and_labels(
-    raw,
+    input_array,
     start_ev_array,
     stop_ev_array,
-    savepath=None,
+    fs: int = 256,
     seizure_lookback: int = 600,
     sample_timestep: int = 10,
     overlap: int = 9,
@@ -271,51 +271,58 @@ def extract_training_data_and_labels(
     ## TODO - skończyć to i przetestować bo źle to wygląda, dorobić zapis
     """Function to extract seizure periods and preictal perdiods into samples ready to be put into graph neural network."""
     for n, start_ev in enumerate(start_ev_array):
-        fs = int(raw.info["sfreq"])
         seizure_lookback = seizure_lookback
+
         prev_event_time = start_ev - stop_ev_array[n - 1] if n > 0 else start_ev
 
         if prev_event_time > seizure_lookback:
-            interictal_period = raw.get_data(
-                start=(start_ev - seizure_lookback) * fs, stop=start_ev * fs
-            )
-        else:
-            interictal_period = raw.get_data(
-                start=(start_ev - prev_event_time) * fs, stop=start_ev * fs
-            )
+            interictal_period = input_array[
+                :, (start_ev - seizure_lookback) * fs : start_ev * fs
+            ]
 
+        else:
+            interictal_period = input_array[
+                :, (start_ev - prev_event_time) * fs : start_ev * fs
+            ]
+       
         interictal_period = (
             np.expand_dims(interictal_period.transpose(), axis=2)
             .swapaxes(0, 2)
             .swapaxes(0, 1)
         )  ##reshape for preprocessing
+        
         interictal_features = prepare_timestep_array(
             array=interictal_period, timestep=sample_timestep * fs, overlap=overlap * fs
         )
+        
         interictal_event_labels = np.zeros(
             interictal_features.shape[0]
         )  ## assign label 0 to every interictal period sample
         interictal_event_time_labels = prepare_timestep_label(
             interictal_period, sample_timestep * fs, overlap * fs
         )  ## assign time to seizure for every sample [s]
-        seizure_period = raw.get_data(start=start_ev * fs, stop=stop_ev_array[n] * fs)
-        print(seizure_period.shape)
+        seizure_period = input_array[:, start_ev * fs : stop_ev_array[n] * fs]
+        
         seizure_period = (
             np.expand_dims(seizure_period.transpose(), axis=2)
             .swapaxes(0, 2)
             .swapaxes(0, 1)
         )
-        print(seizure_period.shape)
+        
         seizure_features = prepare_timestep_array(
             array=seizure_period, timestep=sample_timestep * fs, overlap=overlap * fs
         )
+      
         seizure_event_labels = np.ones(seizure_features.shape[0])
+
+        seizure_event_time_labels = np.full(seizure_features.shape[0], 0)
         if n == 0:
             full_interictal_features = interictal_features
             full_interictal_event_labels = interictal_event_labels
             full_interictal_event_time_labels = interictal_event_time_labels
             full_seizure_features = seizure_features
             full_seizure_event_labels = seizure_event_labels
+            full_seizure_event_time_labels = seizure_event_time_labels
         else:
             full_interictal_features = np.concatenate(
                 (full_interictal_features, interictal_features)
@@ -332,20 +339,27 @@ def extract_training_data_and_labels(
             full_seizure_event_labels = np.concatenate(
                 (full_seizure_event_labels, seizure_event_labels)
             )
-        
-        ## assign label 1 to every seizure period sample
-        # savepath_interictal_data = f"{savepath}_interictal_{n}"
-        # savepath_interictal_labels_e = f"{savepath}_interictal_labels_e_{n}"
-        # savepath_interictal_labels_t = f"{savepath}_interictal_labels_t_{n}"
-        # savepath_ictal_data = f"{savepath}_ictal_{n}"
-        # savepath_ictal_labels_e = f"{savepath}_ictal_labels_e_{n}"
-        # np.save()
+
+            full_seizure_event_time_labels = np.concatenate(
+                (full_seizure_event_time_labels, seizure_event_time_labels)
+            )
+
+    recording_features_array = np.concatenate(
+        (full_interictal_features, full_seizure_features), axis=0
+    )
+    
+    recording_labels_array = np.concatenate(
+        (full_interictal_event_labels, full_seizure_event_labels), axis=0
+    ).astype(np.int32)
+    
+    recording_timestep_array = np.concatenate(
+        (full_interictal_event_time_labels, full_seizure_event_time_labels), axis=0
+    )
+
     return (
-        full_interictal_features,
-        full_interictal_event_labels,
-        full_interictal_event_time_labels,
-        full_seizure_features,
-        full_seizure_event_labels,
+        recording_features_array,
+        recording_labels_array,
+        recording_timestep_array,
     )
 
 
@@ -365,59 +379,79 @@ def run_prep(raw, line_freq, ransac=False, channel_wise=False):
     return prep
 
 
-def get_patient_annotations(path_to_file : Path, savedir : Path):
-    raw_txt = open(path_to_file,'r')
+def get_patient_annotations(path_to_file: Path, savedir: Path):
+    raw_txt = open(path_to_file, "r")
     raw_txt_lines = raw_txt.readlines()
     event_dict_start = dict()
     event_dict_stop = dict()
-    p = '[\d]+'
-    for n,line in enumerate(raw_txt_lines):
+    p = "[\d]+"
+    for n, line in enumerate(raw_txt_lines):
         if "File Name" in line:
-            current_file_name = line.split(': ')[1][:-1]
+            current_file_name = line.split(": ")[1][:-1]
         if "Number of Seizures in File" in line:
             num_of_seizures = int(line[-2:])
-            if  num_of_seizures > 0:
-                events_in_recording = raw_txt_lines[n+1:n+num_of_seizures*2+1]
+            if num_of_seizures > 0:
+                events_in_recording = raw_txt_lines[n + 1 : n + num_of_seizures * 2 + 1]
                 for event in events_in_recording:
                     if "Start Time" in event:
-                        sub_ev = event.split(': ')[1]
-                        time_value = int(re.search(p,sub_ev).group())
-                
+                        sub_ev = event.split(": ")[1]
+                        time_value = int(re.search(p, sub_ev).group())
+
                         if not current_file_name in event_dict_start.keys():
                             event_dict_start[current_file_name] = [time_value]
                         else:
                             event_dict_start[current_file_name].append(time_value)
                     elif "End Time" in event:
-                        sub_ev = event.split(': ')[1]
-                        
-                        time_value = int(re.search(p,sub_ev).group())
-                        
+                        sub_ev = event.split(": ")[1]
+
+                        time_value = int(re.search(p, sub_ev).group())
+
                         if not current_file_name in event_dict_stop.keys():
                             event_dict_stop[current_file_name] = [time_value]
-                            
+
                         else:
                             event_dict_stop[current_file_name].append(time_value)
-    df = pd.DataFrame.from_dict(event_dict_start,orient='index')
+    df = pd.DataFrame.from_dict(event_dict_start, orient="index")
     col_list = []
-    for n in range(1,len(df.columns)+1):
-        col_list.append(f'Seizure {n}')
-    df_start = pd.DataFrame.from_dict(event_dict_start,orient='index',columns=col_list)
-    df_end = pd.DataFrame.from_dict(event_dict_stop,orient='index',columns=col_list)
-    patient_id = current_file_name.split('_')[0]
+    for n in range(1, len(df.columns) + 1):
+        col_list.append(f"Seizure {n}")
+    df_start = pd.DataFrame.from_dict(
+        event_dict_start, orient="index", columns=col_list
+    )
+    df_end = pd.DataFrame.from_dict(event_dict_stop, orient="index", columns=col_list)
+    patient_id = current_file_name.split("_")[0]
     if not os.path.exists(savedir):
         os.mkdir(savedir)
-    dst_dir_start = os.path.join(savedir,f"{patient_id}_start.csv")
-    dst_dir_stop = os.path.join(savedir,f"{patient_id}_stop.csv")
-    pd.DataFrame.to_csv(df_start,dst_dir_start,index_label=False) 
-    pd.DataFrame.to_csv(df_end,dst_dir_stop,index_label=False)
+    dst_dir_start = os.path.join(savedir, f"{patient_id}_start.csv")
+    dst_dir_stop = os.path.join(savedir, f"{patient_id}_stop.csv")
+    pd.DataFrame.to_csv(df_start, dst_dir_start, index_label=False)
+    pd.DataFrame.to_csv(df_end, dst_dir_stop, index_label=False)
+
 
 def get_annotation_files(dataset_path):
     patient_folders = os.listdir(dataset_path)
     for folder in patient_folders:
-        patient_folder_path = os.path.join(dataset_path,folder)
+        patient_folder_path = os.path.join(dataset_path, folder)
         if os.path.isdir(patient_folder_path):
             patient_files = os.listdir(patient_folder_path)
             for filename in patient_files:
                 if "summary" in filename:
-                    annotation_path = os.path.join(patient_folder_path,filename)
-                    get_patient_annotations(annotation_path,Path("event_tables"))
+                    annotation_path = os.path.join(patient_folder_path, filename)
+                    get_patient_annotations(annotation_path, Path("event_tables"))
+
+
+def save_timeseries_array(ds_path, target_path):
+    patient_folders = os.listdir(ds_path)
+    for folder in patient_folders:
+        patient_folder_path = os.path.join(ds_path, folder)
+        patient_files = os.listdir(patient_folder_path)
+        for file in patient_files:
+            filepath = os.path.join(patient_folder_path, file)
+            data_raw = mne.io.read_raw_edf(filepath, preload=False, verbose=False)
+            array_data = data_raw.get_data()
+            dst_folder = os.path.join(target_path, folder)
+            if not os.path.exists(dst_folder):
+                os.mkdir(dst_folder)
+            file_target = file.split(".edf")[0] + ".npy"
+            dst_folder = os.path.join(dst_folder, file_target)
+            np.save(dst_folder, array_data)
