@@ -5,8 +5,8 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from sklearn.decomposition import PCA
-from mne_icalabel import label_components
-from pyprep.prep_pipeline import PrepPipeline
+#from mne_icalabel import label_components
+#from pyprep.prep_pipeline import PrepPipeline
 from mne.preprocessing import ICA
 
 
@@ -363,20 +363,20 @@ def extract_training_data_and_labels(
     )
 
 
-def run_prep(raw, line_freq, ransac=False, channel_wise=False):
-    sfreq = raw.info["sfreq"]
-    prep_params = {
-        "ref_chs": "eeg",
-        "reref_chs": "eeg",
-        "line_freqs": np.arange(line_freq, sfreq / 2, line_freq),
-    }
-    raw.load_data()
-    montage = raw.get_montage()
-    prep = PrepPipeline(
-        raw, prep_params, montage, ransac=ransac, channel_wise=channel_wise
-    )
-    prep.fit()
-    return prep
+# def run_prep(raw, line_freq, ransac=False, channel_wise=False):
+#     sfreq = raw.info["sfreq"]
+#     prep_params = {
+#         "ref_chs": "eeg",
+#         "reref_chs": "eeg",
+#         "line_freqs": np.arange(line_freq, sfreq / 2, line_freq),
+#     }
+#     raw.load_data()
+#     montage = raw.get_montage()
+#     prep = PrepPipeline(
+#         raw, prep_params, montage, ransac=ransac, channel_wise=channel_wise
+#     )
+#     prep.fit()
+#     return prep
 
 
 def get_patient_annotations(path_to_file: Path, savedir: Path):
