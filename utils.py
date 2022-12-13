@@ -116,7 +116,7 @@ def reorder_channels_chbmit(raw):
     raw.rename_channels(ch_map)
     raw.reorder_channels(ch_demanded_order)
     montage = mne.channels.read_custom_montage(
-        Path("sano_eeg/data/chb_mit_ch_locs.loc")
+        Path("data/chb_mit_ch_locs.loc")
     )
     raw.set_montage(montage)
 
@@ -302,7 +302,6 @@ def extract_training_data_and_labels(
             interictal_period, sample_timestep * fs, overlap * fs
         )  ## assign time to seizure for every sample [s]
         seizure_period = input_array[:, start_ev * fs : stop_ev_array[n] * fs]
-        
         seizure_period = (
             np.expand_dims(seizure_period.transpose(), axis=2)
             .swapaxes(0, 2)
@@ -316,6 +315,8 @@ def extract_training_data_and_labels(
         seizure_event_labels = np.ones(seizure_features.shape[0])
 
         seizure_event_time_labels = np.full(seizure_features.shape[0], 0)
+
+    
         if n == 0:
             full_interictal_features = interictal_features
             full_interictal_event_labels = interictal_event_labels
