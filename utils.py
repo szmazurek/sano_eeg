@@ -266,7 +266,8 @@ def extract_training_data_and_labels(
     fs: int = 256,
     seizure_lookback: int = 600,
     sample_timestep: int = 10,
-    overlap: int = 9,
+    inter_overlap: int = 9,
+    ictal_overlap : int = 9
 ):
     ## TODO - skończyć to i przetestować bo źle to wygląda, dorobić zapis
     """Function to extract seizure periods and preictal perdiods into samples ready to be put into graph neural network."""
@@ -292,14 +293,14 @@ def extract_training_data_and_labels(
         )  ##reshape for preprocessing
         
         interictal_features = prepare_timestep_array(
-            array=interictal_period, timestep=sample_timestep * fs, overlap=overlap * fs
+            array=interictal_period, timestep=sample_timestep * fs, overlap=inter_overlap * fs
         )
         
         interictal_event_labels = np.zeros(
             interictal_features.shape[0]
         )  ## assign label 0 to every interictal period sample
         interictal_event_time_labels = prepare_timestep_label(
-            interictal_period, sample_timestep * fs, overlap * fs
+            interictal_period, sample_timestep * fs, inter_overlap * fs
         )  ## assign time to seizure for every sample [s]
         seizure_period = input_array[:, start_ev * fs : stop_ev_array[n] * fs]
         seizure_period = (
@@ -309,7 +310,7 @@ def extract_training_data_and_labels(
         )
         
         seizure_features = prepare_timestep_array(
-            array=seizure_period, timestep=sample_timestep * fs, overlap=overlap * fs
+            array=seizure_period, timestep=sample_timestep * fs, overlap=ictal_overlap * fs
         )
       
         seizure_event_labels = np.ones(seizure_features.shape[0])
