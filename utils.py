@@ -5,8 +5,8 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from sklearn.decomposition import PCA
-from mne_icalabel import label_components
-from pyprep.prep_pipeline import PrepPipeline
+#from mne_icalabel import label_components
+#from pyprep.prep_pipeline import PrepPipeline
 from mne.preprocessing import ICA
 
 
@@ -266,7 +266,8 @@ def extract_training_data_and_labels(
     fs: int = 256,
     seizure_lookback: int = 600,
     sample_timestep: int = 10,
-    overlap: int = 9,
+    inter_overlap: int = 9,
+    ictal_overlap : int = 9
 ):
     ## TODO - skończyć to i przetestować bo źle to wygląda, dorobić zapis
     """Function to extract seizure periods and preictal perdiods into samples ready to be put into graph neural network."""
@@ -292,17 +293,16 @@ def extract_training_data_and_labels(
         )  ##reshape for preprocessing
         
         interictal_features = prepare_timestep_array(
-            array=interictal_period, timestep=sample_timestep * fs, overlap=overlap * fs
+            array=interictal_period, timestep=sample_timestep * fs, overlap=inter_overlap * fs
         )
         
         interictal_event_labels = np.zeros(
             interictal_features.shape[0]
         )  ## assign label 0 to every interictal period sample
         interictal_event_time_labels = prepare_timestep_label(
-            interictal_period, sample_timestep * fs, overlap * fs
+            interictal_period, sample_timestep * fs, inter_overlap * fs
         )  ## assign time to seizure for every sample [s]
         seizure_period = input_array[:, start_ev * fs : stop_ev_array[n] * fs]
-        
         seizure_period = (
             np.expand_dims(seizure_period.transpose(), axis=2)
             .swapaxes(0, 2)
@@ -310,12 +310,14 @@ def extract_training_data_and_labels(
         )
         
         seizure_features = prepare_timestep_array(
-            array=seizure_period, timestep=sample_timestep * fs, overlap=overlap * fs
+            array=seizure_period, timestep=sample_timestep * fs, overlap=ictal_overlap * fs
         )
       
         seizure_event_labels = np.ones(seizure_features.shape[0])
 
         seizure_event_time_labels = np.full(seizure_features.shape[0], 0)
+
+    
         if n == 0:
             full_interictal_features = interictal_features
             full_interictal_event_labels = interictal_event_labels
@@ -363,20 +365,20 @@ def extract_training_data_and_labels(
     )
 
 
-def run_prep(raw, line_freq, ransac=False, channel_wise=False):
-    sfreq = raw.info["sfreq"]
-    prep_params = {
-        "ref_chs": "eeg",
-        "reref_chs": "eeg",
-        "line_freqs": np.arange(line_freq, sfreq / 2, line_freq),
-    }
-    raw.load_data()
-    montage = raw.get_montage()
-    prep = PrepPipeline(
-        raw, prep_params, montage, ransac=ransac, channel_wise=channel_wise
-    )
-    prep.fit()
-    return prep
+# def run_prep(raw, line_freq, ransac=False, channel_wise=False):
+#     sfreq = raw.info["sfreq"]
+#     prep_params = {
+#         "ref_chs": "eeg",
+#         "reref_chs": "eeg",
+#         "line_freqs": np.arange(line_freq, sfreq / 2, line_freq),
+#     }
+#     raw.load_data()
+#     montage = raw.get_montage()
+#     prep = PrepPipeline(
+#         raw, prep_params, montage, ransac=ransac, channel_wise=channel_wise
+#     )
+#     prep.fit()
+#     return prep
 
 
 def get_patient_annotations(path_to_file: Path, savedir: Path):

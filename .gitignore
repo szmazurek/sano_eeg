@@ -1,0 +1,9 @@
+sano_env/
+raw_dataset/
+__pycache__
+preprocessed_data/
+npy_data/
+data/
+.ipynb_checkpoints/
+event_tables/
+lightning_logs/
