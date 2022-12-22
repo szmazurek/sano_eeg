@@ -79,7 +79,7 @@ standard_channel_order = [
 
 
 def remove_channels_dummy(ch_name):
-    if re.findall("--", ch_name):
+    if re.findall("--", ch_name) or re.findall("\.", ch_name):
         print(f"Removing channel {ch_name}")
         return True
     return False
@@ -192,6 +192,10 @@ def load_and_dump_channels(filepath):
         data_raw.drop_channels(remove_repeating_pairs(ch_names))
     except:
         print("No repeating pairs to remove")
+    current_channels = data_raw.ch_names
+    for channel in current_channels:
+        if channel not in standard_channel_order:
+            data_raw.drop_channels(channel)
     current_channels = data_raw.ch_names
     if current_channels != standard_channel_order:
         data_raw.reorder_channels(standard_channel_order)
