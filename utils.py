@@ -1,6 +1,8 @@
 import mne
 import re
 import os
+import scipy
+import timeit
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -8,6 +10,7 @@ from sklearn.decomposition import PCA
 #from mne_icalabel import label_components
 #from pyprep.prep_pipeline import PrepPipeline
 from mne.preprocessing import ICA
+
 
 
 ch_demanded_order = [
@@ -430,7 +433,7 @@ def get_patient_annotations(path_to_file: Path, savedir: Path):
     pd.DataFrame.to_csv(df_end, dst_dir_stop, index_label=False)
 
 
-def get_annotation_files(dataset_path):
+def get_annotation_files(dataset_path,dst_path):
     patient_folders = os.listdir(dataset_path)
     for folder in patient_folders:
         patient_folder_path = os.path.join(dataset_path, folder)
@@ -439,7 +442,7 @@ def get_annotation_files(dataset_path):
             for filename in patient_files:
                 if "summary" in filename:
                     annotation_path = os.path.join(patient_folder_path, filename)
-                    get_patient_annotations(annotation_path, Path("event_tables"))
+                    get_patient_annotations(Path(annotation_path), dst_path)
 
 
 def save_timeseries_array(ds_path, target_path):
@@ -457,3 +460,61 @@ def save_timeseries_array(ds_path, target_path):
             file_target = file.split(".edf")[0] + ".npy"
             dst_folder = os.path.join(dst_folder, file_target)
             np.save(dst_folder, array_data)
+
+def plv_connectivity(sensors,data):
+    """
+    Parameters
+    ----------
+    sensors : INT
+        DESCRIPTION. No of sensors used for capturing EEG
+    data : Array of float 
+        DESCRIPTION. EEG Data
+    
+    Returns
+    -------
+    connectivity_matrix : Matrix of float
+        DESCRIPTION. PLV connectivity matrix
+    connectivity_vector : Vector of flaot 
+        DESCRIPTION. PLV connectivity vector
+    """
+    print("PLV in process.....")
+    
+    # Predefining connectivity matrix
+    connectivity_matrix = np.zeros([sensors,sensors],dtype=float)
+    
+    # Computing hilbert transform
+    data_points = data.shape[-1]
+    data_hilbert = np.imag(scipy.signal.hilbert(data))
+    phase = np.arctan(data_hilbert/data)
+    
+    # Computing connectivity matrix 
+    for i in range(sensors):
+        for k in range(sensors):
+            connectivity_matrix[i,k] = np.abs(np.sum(np.exp(1j*(phase[i,:]-phase[k,:]))))/data_points
+            
+    # Computing connectivity vector
+   # connectivity_vector = connectivity_matrix[np.triu_indices(connectivity_matrix.shape[0],k=1)] 
+      
+    # returning connectivity matrix and vector
+    
+    return connectivity_matrix
+
+def create_recordings_plv(npy_dataset_path,dst_path):
+    patient_list = os.listdir(npy_dataset_path)
+    if not os.path.exists(dst_path):
+        os.mkdir(dst_path)
+    for patient in patient_list: # iterate over patient names
+        patient_path = os.path.join(npy_dataset_path,patient)
+        recording_list = os.listdir(patient_path)
+        save_folder = os.path.join(dst_path,patient)
+        if not os.path.exists(save_folder):
+            os.mkdir(save_folder)
+        for record in recording_list: # iterate over recordings for a patient
+            recording_path = os.path.join(patient_path,record)
+            data_array = np.load(recording_path) # load the recording
+            starttime = timeit.default_timer()
+            print(f'Calculating PLV for {record}')
+            plv_array = plv_connectivity(data_array.shape[0],data_array)
+            target_filename = os.path.join(save_folder,record)
+            np.save(target_filename,plv_array)
+            print("The time of calculation is :", timeit.default_timer() - starttime)

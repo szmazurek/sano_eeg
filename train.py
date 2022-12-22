@@ -14,7 +14,7 @@ from torch.nn import functional as F
 from torchmetrics.classification import BinaryRecall
 import pytorch_lightning as pl
 from torch_geometric.nn import GCNConv, BatchNorm
-
+print("Imports done")
 TIMESTEP = 5
 INTER_OVERLAP = 0
 ICTAL_OVERLAP = 4
@@ -328,7 +328,7 @@ class EEGDataLoader(pl.LightningDataModule):
     def train_dataloader(self):
         return self.train_loader
 
-    def valid_dataloader(self):
+    def val_dataloader(self):
         return self.valid_loader
 
 
@@ -350,15 +350,15 @@ class GraphConv(pl.LightningModule):
         self.recall = BinaryRecall(threshold=binary_recall_threshold)
 
     def forward(self, x, edge_index, edge_attr):
-        print(x.shape)
-        print(edge_index.shape)
-        print(edge_attr).shape
+        # print(x.shape)
+        # print(edge_index.shape)
+        # print(edge_attr.shape)
         return self.model(x, edge_index, edge_attr)
 
     def training_step(self, snapshot):
-        print(snapshot.x.shape)
-        print(snapshot.edge_index.shape)
-        print(snapshot.edge_attr.shape)
+        # print(snapshot.x.shape)
+        # print(snapshot.edge_index.shape)
+        # print(snapshot.edge_attr.shape)
         logits = self(snapshot.x, snapshot.edge_index, snapshot.edge_attr)
         loss = self.loss(logits, snapshot.y)
         sensitivity = self.recall(logits, snapshot.y)
@@ -381,7 +381,7 @@ class GraphConv(pl.LightningModule):
     def configure_optimizers(self):
         return torch.optim.Adam(self.model.parameters(), lr=0.001)
 
-
+print("Classes done")
 pl_dataloader = EEGDataLoader(
     npy_dataset_path=Path("data/npy_data"),
     event_tables_path=Path("data/event_tables"),
@@ -394,10 +394,14 @@ pl_dataloader = EEGDataLoader(
     ictal_overlap=ICTAL_OVERLAP,
     self_loops=True,
 )
+print("Setup...")
 pl_dataloader.setup()
-
+print("Setup done")
 pl_model = GraphConv(18, TIMESTEP, SFREQ)
-
+print("Model done")
+print("Trainer...")
 trainer = pl.Trainer(
-    accelerator="cpu", devices=1, num_nodes=1, max_epochs=10, num_sanity_val_steps=0
+    accelerator="gpu", devices=2, num_nodes=1, max_epochs=10, num_sanity_val_steps=0
 )
+print("Training...")
+trainer.fit(pl_model,pl_dataloader)
