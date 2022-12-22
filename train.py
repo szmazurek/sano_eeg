@@ -401,7 +401,7 @@ pl_model = GraphConv(18, TIMESTEP, SFREQ)
 print("Model done")
 print("Trainer...")
 trainer = pl.Trainer(
-    accelerator="gpu", devices=2, num_nodes=1, max_epochs=10, num_sanity_val_steps=0
+    accelerator="gpu", devices=2, num_nodes=1, max_epochs=10, num_sanity_val_steps=0,strategy='ddp'
 )
 print("Training...")
 trainer.fit(pl_model,pl_dataloader)
