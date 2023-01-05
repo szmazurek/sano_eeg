@@ -271,12 +271,13 @@ def extract_training_data_and_labels(
     start_ev_array,
     stop_ev_array,
     fs: int = 256,
-    seizure_lookback: int = 600,
-    sample_timestep: int = 10,
-    inter_overlap: int = 9,
-    ictal_overlap : int = 9
+    seizure_lookback: int = 600, ## in seconds
+    sample_timestep: int = 10, ## in seconds
+    inter_overlap: int = 9, ## in seconds
+    ictal_overlap : int = 9 ## in seconds
 ):
-    ## TODO - skończyć to i przetestować bo źle to wygląda, dorobić zapis
+    ## TODO - dorobić branie próbek tak, że jest w stanie uniknąć crasha na 
+    ## zbyt krótkich okresach i po prostu takie okresy pomijać
     """Function to extract seizure periods and preictal perdiods into samples ready to be put into graph neural network."""
     for n, start_ev in enumerate(start_ev_array):
         seizure_lookback = seizure_lookback
