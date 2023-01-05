@@ -280,6 +280,7 @@ def extract_training_data_and_labels(
     ## zbyt krótkich okresach i po prostu takie okresy pomijać
     """Function to extract seizure periods and preictal perdiods into samples ready to be put into graph neural network."""
     for n, start_ev in enumerate(start_ev_array):
+
         seizure_lookback = seizure_lookback
 
         prev_event_time = start_ev - stop_ev_array[n - 1] if n > 0 else start_ev
@@ -293,7 +294,7 @@ def extract_training_data_and_labels(
             interictal_period = input_array[
                 :, (start_ev - prev_event_time) * fs : start_ev * fs
             ]
-       
+    
         interictal_period = (
             np.expand_dims(interictal_period.transpose(), axis=2)
             .swapaxes(0, 2)
@@ -316,56 +317,65 @@ def extract_training_data_and_labels(
             .swapaxes(0, 2)
             .swapaxes(0, 1)
         )
-        
+       
         seizure_features = prepare_timestep_array(
             array=seizure_period, timestep=sample_timestep * fs, overlap=ictal_overlap * fs
         )
-      
+        print(f"Len Seizure features: {len(seizure_features.shape)}")
         seizure_event_labels = np.ones(seizure_features.shape[0])
-
+       # print(f"seizure_event_labels: {seizure_event_labels.shape}")
         seizure_event_time_labels = np.full(seizure_features.shape[0], 0)
-
+        #print(f"seizure_event_time_labels: {seizure_event_time_labels.shape}")
     
-        if n == 0:
-            full_interictal_features = interictal_features
-            full_interictal_event_labels = interictal_event_labels
-            full_interictal_event_time_labels = interictal_event_time_labels
-            full_seizure_features = seizure_features
-            full_seizure_event_labels = seizure_event_labels
-            full_seizure_event_time_labels = seizure_event_time_labels
-        else:
-            full_interictal_features = np.concatenate(
-                (full_interictal_features, interictal_features)
-            )
-            full_interictal_event_labels = np.concatenate(
-                (full_interictal_event_labels, interictal_event_labels)
-            )
-            full_interictal_event_time_labels = np.concatenate(
-                (full_interictal_event_time_labels, interictal_event_time_labels)
-            )
-            full_seizure_features = np.concatenate(
-                (full_seizure_features, seizure_features)
-            )
-            full_seizure_event_labels = np.concatenate(
-                (full_seizure_event_labels, seizure_event_labels)
-            )
+        try:
+            
+            if len(interictal_features.shape) == 4:
+                full_interictal_features = np.concatenate(
+                    (full_interictal_features, interictal_features)
+                )
+                full_interictal_event_labels = np.concatenate(
+                    (full_interictal_event_labels, interictal_event_labels)
+                )
+                full_interictal_event_time_labels = np.concatenate(
+                    (full_interictal_event_time_labels, interictal_event_time_labels)
+                )
+            if len(seizure_features.shape) == 4:
+          
+                full_seizure_features = np.concatenate(
+                    (full_seizure_features, seizure_features)
+                )
+                full_seizure_event_labels = np.concatenate(
+                    (full_seizure_event_labels, seizure_event_labels)
+                )
 
-            full_seizure_event_time_labels = np.concatenate(
-                (full_seizure_event_time_labels, seizure_event_time_labels)
-            )
-
-    recording_features_array = np.concatenate(
-        (full_interictal_features, full_seizure_features), axis=0
-    )
+                full_seizure_event_time_labels = np.concatenate(
+                    (full_seizure_event_time_labels, seizure_event_time_labels)
+                )
+        except:
     
-    recording_labels_array = np.concatenate(
-        (full_interictal_event_labels, full_seizure_event_labels), axis=0
-    ).astype(np.int32)
-    
-    recording_timestep_array = np.concatenate(
-        (full_interictal_event_time_labels, full_seizure_event_time_labels), axis=0
-    )
-
+            if len(interictal_features.shape) == 4:
+                full_interictal_features = interictal_features
+                full_interictal_event_labels = interictal_event_labels
+                full_interictal_event_time_labels = interictal_event_time_labels
+            if len(seizure_features.shape) == 4:
+                full_seizure_features = seizure_features
+                full_seizure_event_labels = seizure_event_labels
+                full_seizure_event_time_labels = seizure_event_time_labels
+    try:
+        recording_features_array = np.concatenate(
+            (full_interictal_features, full_seizure_features), axis=0
+        )
+        
+        recording_labels_array = np.concatenate(
+            (full_interictal_event_labels, full_seizure_event_labels), axis=0
+        ).astype(np.int32)
+        
+        recording_timestep_array = np.concatenate(
+            (full_interictal_event_time_labels, full_seizure_event_time_labels), axis=0
+        )
+    except:
+        return (None,None,None)
+ 
     return (
         recording_features_array,
         recording_labels_array,
