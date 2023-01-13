@@ -274,7 +274,8 @@ def extract_training_data_and_labels(
     seizure_lookback: int = 600, ## in seconds
     sample_timestep: int = 10, ## in seconds
     inter_overlap: int = 9, ## in seconds
-    ictal_overlap : int = 9 ## in seconds
+    ictal_overlap : int = 9, ## in seconds
+    buffer_time : int = 5 ## in seconds
 ):
     ## TODO - dorobić branie próbek tak, że jest w stanie uniknąć crasha na 
     ## zbyt krótkich okresach i po prostu takie okresy pomijać
@@ -285,14 +286,14 @@ def extract_training_data_and_labels(
 
         prev_event_time = start_ev - stop_ev_array[n - 1] if n > 0 else start_ev
 
-        if prev_event_time > seizure_lookback:
+        if prev_event_time > seizure_lookback + buffer_time*3:
             interictal_period = input_array[
-                :, (start_ev - seizure_lookback) * fs : start_ev * fs
+                :, (start_ev - seizure_lookback - buffer_time) * fs  : (start_ev  - buffer_time)*fs
             ]
 
         else:
             interictal_period = input_array[
-                :, (start_ev - prev_event_time) * fs : start_ev * fs
+                :, (start_ev - prev_event_time + buffer_time) * fs : (start_ev-buffer_time) * fs 
             ]
     
         interictal_period = (
@@ -321,11 +322,11 @@ def extract_training_data_and_labels(
         seizure_features = prepare_timestep_array(
             array=seizure_period, timestep=sample_timestep * fs, overlap=ictal_overlap * fs
         )
-        print(f"Len Seizure features: {len(seizure_features.shape)}")
+        
         seizure_event_labels = np.ones(seizure_features.shape[0])
-       # print(f"seizure_event_labels: {seizure_event_labels.shape}")
+
         seizure_event_time_labels = np.full(seizure_features.shape[0], 0)
-        #print(f"seizure_event_time_labels: {seizure_event_time_labels.shape}")
+
     
         try:
             
