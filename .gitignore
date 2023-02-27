@@ -8,3 +8,4 @@ lightning_logs/
 *.err
 *.out
 *.sh
+wandb_api_key.txt

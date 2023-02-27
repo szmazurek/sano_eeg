@@ -312,7 +312,7 @@ def extract_training_data_and_labels(
         interictal_event_time_labels = prepare_timestep_label(
             interictal_period, sample_timestep * fs, inter_overlap * fs
         )  ## assign time to seizure for every sample [s]
-        seizure_period = input_array[:, start_ev * fs : stop_ev_array[n] * fs]
+        seizure_period = input_array[:, (start_ev+1) * fs : (stop_ev_array[n]-1) * fs]
         seizure_period = (
             np.expand_dims(seizure_period.transpose(), axis=2)
             .swapaxes(0, 2)
