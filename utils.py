@@ -10,7 +10,7 @@ from sklearn.decomposition import PCA
 #from mne_icalabel import label_components
 #from pyprep.prep_pipeline import PrepPipeline
 from mne.preprocessing import ICA
-
+import torch
 
 
 ch_demanded_order = [
@@ -129,10 +129,11 @@ def run_preprocessing(
     n_ica_components=18,
     freq_l=1.0,
     freq_h=30.0,
-    avg_ref=True,
+    avg_ref=False, ##Caution ! this needs to be paid attention to!
     apply_pca=True,
     apply_ica=False,
     informax=False,
+    discard_first_n_components : int = 2
 ):
     """Runs preprocessing on given mne.raw instance."""
     if apply_ica and apply_pca:
@@ -167,7 +168,7 @@ def run_preprocessing(
         components = pca.components_
         mu = pca.mean_
         transform_raw = pca.transform(raw._data)
-        raw._data = np.squeeze(mu + transform_raw[:, 2:] @ components[2:])
+        raw._data = np.squeeze(mu + transform_raw[:, discard_first_n_components:] @ components[discard_first_n_components:]) ## remove first two components
 
     return raw
 
@@ -236,8 +237,8 @@ def preprocess_dataset(
             continue
 
         reorder_channels_chbmit(raw_file)
-
-        raw_instance = run_preprocessing(raw_file, apply_pca=True, freq_l=2)
+        ## THIS SHOULD BE PARAMETRIZED AS KWARGS
+        raw_instance = run_preprocessing(raw_file, apply_pca=True, freq_l=0.5, freq_h=30.0,discard_first_n_components=5)
         save_path = os.path.join(preprocessed_dirpath, subject)
         if not os.path.exists(os.path.split(save_path)[0]):
             os.mkdir(os.path.split(save_path)[0])
@@ -312,7 +313,7 @@ def extract_training_data_and_labels(
         interictal_event_time_labels = prepare_timestep_label(
             interictal_period, sample_timestep * fs, inter_overlap * fs
         )  ## assign time to seizure for every sample [s]
-        seizure_period = input_array[:, start_ev * fs : stop_ev_array[n] * fs]
+        seizure_period = input_array[:, (start_ev+1) * fs : (stop_ev_array[n]-1) * fs]
         seizure_period = (
             np.expand_dims(seizure_period.transpose(), axis=2)
             .swapaxes(0, 2)
@@ -534,3 +535,54 @@ def create_recordings_plv(npy_dataset_path,dst_path):
             target_filename = os.path.join(save_folder,record)
             np.save(target_filename,plv_array)
             print("The time of calculation is :", timeit.default_timer() - starttime)
+            
+class EarlyStopping:
+    """Credit to https://github.com/Bjarten/early-stopping-pytorch"""
+    """Early stops the training if validation loss doesn't improve after a given patience."""
+    def __init__(self, patience=7, verbose=False, delta=0, path='checkpoint.pt', trace_func=print):
+        """
+        Args:
+            patience (int): How long to wait after last time validation loss improved.
+                            Default: 7
+            verbose (bool): If True, prints a message for each validation loss improvement. 
+                            Default: False
+            delta (float): Minimum change in the monitored quantity to qualify as an improvement.
+                            Default: 0
+            path (str): Path for the checkpoint to be saved to.
+                            Default: 'checkpoint.pt'
+            trace_func (function): trace print function.
+                            Default: print            
+        """
+        self.patience = patience
+        self.verbose = verbose
+        self.counter = 0
+        self.best_score = None
+        self.early_stop = False
+        self.val_loss_min = np.Inf
+        self.delta = delta
+        self.path = path
+        self.trace_func = trace_func
+    def __call__(self, val_loss, model):
+
+        score = -val_loss
+
+        if self.best_score is None:
+            self.best_score = score
+            self.save_checkpoint(val_loss, model)
+        elif score < self.best_score + self.delta:
+            self.counter += 1
+            if self.verbose:
+                self.trace_func(f'EarlyStopping counter: {self.counter} out of {self.patience}')
+            if self.counter >= self.patience:
+                self.early_stop = True
+        else:
+            self.best_score = score
+            self.save_checkpoint(val_loss, model)
+            self.counter = 0
+
+    def save_checkpoint(self, val_loss, model):
+        '''Saves model when validation loss decrease.'''
+        if self.verbose:
+            self.trace_func(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
+        torch.save(model.state_dict(), self.path)
+        self.val_loss_min = val_loss
