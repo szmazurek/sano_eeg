@@ -129,6 +129,8 @@ def run_preprocessing(
     n_ica_components=18,
     freq_l=1.0,
     freq_h=30.0,
+    sfreq=256.0,
+    powerline_freq=50.0,
     avg_ref=False, ##Caution ! this needs to be paid attention to!
     apply_pca=True,
     apply_ica=False,
@@ -142,7 +144,7 @@ def run_preprocessing(
         )
 
     raw.load_data()
-    raw.filter(l_freq=freq_l, h_freq=freq_h, h_trans_bandwidth=1)
+    raw.filter(l_freq=freq_l, h_freq=freq_h, h_trans_bandwidth=1).notch_filter(np.arange(powerline_freq,sfreq/2,powerline_freq))
     if avg_ref:
         raw.set_eeg_reference()
     if apply_ica:
@@ -210,10 +212,10 @@ def load_and_dump_channels(filepath):
     return data_raw
 
 
-def preprocess_dataset(
+def preprocess_dataset_seizures(
     subjects_with_seizures_path, dataset_dirpath, preprocessed_dirpath
 ):
-    """Runs full preprocessing on the dataset cointained in the folder.
+    """Runs full preprocessing on the dataset cointained in the folder (only on seizure recordings).
     Args:  
         subject_with_seizures_path: path to a text file containing recordings with seizures.
     The names have to be a row vector, with every row named patient_folder/recording_name.edf.
@@ -238,13 +240,45 @@ def preprocess_dataset(
 
         reorder_channels_chbmit(raw_file)
         ## THIS SHOULD BE PARAMETRIZED AS KWARGS
-        raw_instance = run_preprocessing(raw_file, apply_pca=True, freq_l=0.5, freq_h=30.0,discard_first_n_components=5)
+        raw_instance = run_preprocessing(raw_file, apply_pca=True,avg_ref=True, freq_l=0.5, freq_h=30.0)
         save_path = os.path.join(preprocessed_dirpath, subject)
         if not os.path.exists(os.path.split(save_path)[0]):
             os.mkdir(os.path.split(save_path)[0])
         mne.export.export_raw(save_path, raw_instance, fmt="edf")
         print(f"Finished preprocessing subject {subject}.")
 
+def preprocess_dataset_all(subjects_with_seizures_path, dataset_path, preprocessed_dirpath):
+    subjects_with_seizures = [
+        subject[:-1] for subject in open(subjects_with_seizures_path, "r").readlines()
+    ]
+    
+    for folder in os.listdir(dataset_path):
+        if not os.path.isdir(os.path.join(dataset_path, folder)):
+            
+            print(os.path.isdir(os.path.join(dataset_path, folder)))
+            continue
+        
+        for file in os.listdir(os.path.join(dataset_path, folder)):
+          
+            if file.endswith(".edf"):
+                try:
+                    raw_file = load_and_dump_channels(os.path.join(dataset_path, folder, file))
+                    if raw_file is None:
+                        continue
+                except:
+                    print(f"Subject {folder}/{file} not found.")
+                    continue
+                reorder_channels_chbmit(raw_file)
+                ## THIS SHOULD BE PARAMETRIZED AS KWARGS
+                raw_instance = run_preprocessing(raw_file, apply_pca=True,avg_ref=True, freq_l=0.5, freq_h=30.0)
+                if os.path.join(folder, file) in subjects_with_seizures:
+                    save_path = os.path.join(preprocessed_dirpath, folder, "seizures_"+file)
+                else:
+                    save_path = os.path.join(preprocessed_dirpath, folder, file)
+                if not os.path.exists(os.path.split(save_path)[0]):
+                    os.mkdir(os.path.split(save_path)[0])
+                mne.export.export_raw(save_path, raw_instance, fmt="edf")
+                print(f"Finished preprocessing subject {folder}/{file}.")
 
 def prepare_timestep_array(array, timestep, overlap):
     """Preprocess input array of shape [n_nodes,feature_per_node,samples]
@@ -266,7 +300,23 @@ def prepare_timestep_label(array, timestep, overlap):
     ]
     return np.array(seconds)
 
-
+def extract_training_data_and_labels_interictal(
+    input_array,
+    samples_per_recording : int = 10, ## number of samples per recording
+    fs: int = 256,
+    timestep: int = 10, ## in seconds
+    overlap : int = 9, ## in seconds
+    label_value : int = 3
+):
+    total_samples = input_array.shape[1]
+    random_start_time = np.random.randint(0,total_samples-samples_per_recording*fs)
+    interictal_period = input_array[
+                :, random_start_time  : random_start_time+samples_per_recording*fs
+            ]
+    final_array = prepare_timestep_array(interictal_period, timestep*fs, overlap*fs)
+    labels = np.full([final_array.shape[0]], label_value)
+    
+    return final_array, labels
 def extract_training_data_and_labels(
     input_array,
     start_ev_array,
@@ -278,8 +328,7 @@ def extract_training_data_and_labels(
     ictal_overlap : int = 9, ## in seconds
     buffer_time : int = 5 ## in seconds
 ):
-    ## TODO - dorobić branie próbek tak, że jest w stanie uniknąć crasha na 
-    ## zbyt krótkich okresach i po prostu takie okresy pomijać
+    
     """Function to extract seizure periods and preictal perdiods into samples ready to be put into graph neural network."""
     for n, start_ev in enumerate(start_ev_array):
 
@@ -287,7 +336,7 @@ def extract_training_data_and_labels(
 
         prev_event_time = start_ev - stop_ev_array[n - 1] if n > 0 else start_ev
 
-        if prev_event_time > seizure_lookback + buffer_time*3:
+        if prev_event_time > seizure_lookback + buffer_time: ## take into account buffer time after the previous seizure and before current one
             interictal_period = input_array[
                 :, (start_ev - seizure_lookback - buffer_time) * fs  : (start_ev  - buffer_time)*fs
             ]
@@ -313,7 +362,7 @@ def extract_training_data_and_labels(
         interictal_event_time_labels = prepare_timestep_label(
             interictal_period, sample_timestep * fs, inter_overlap * fs
         )  ## assign time to seizure for every sample [s]
-        seizure_period = input_array[:, (start_ev+1) * fs : (stop_ev_array[n]-1) * fs]
+        seizure_period = input_array[:, (start_ev) * fs : (stop_ev_array[n]) * fs]
         seizure_period = (
             np.expand_dims(seizure_period.transpose(), axis=2)
             .swapaxes(0, 2)
