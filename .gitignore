@@ -9,3 +9,6 @@ lightning_logs/
 *.out
 *.sh
 wandb_api_key.txt
+checkpoints/
+wandb/
+*.log
