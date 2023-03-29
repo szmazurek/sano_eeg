@@ -240,7 +240,8 @@ def preprocess_dataset_seizures(
 
         reorder_channels_chbmit(raw_file)
         ## THIS SHOULD BE PARAMETRIZED AS KWARGS
-        raw_instance = run_preprocessing(raw_file, apply_pca=True,avg_ref=True, freq_l=0.5, freq_h=30.0)
+        #raw_instance = run_preprocessing(raw_file, apply_pca=False,avg_ref=True, freq_l=0.5, freq_h=30.0)
+        raw_instance = raw_file
         save_path = os.path.join(preprocessed_dirpath, subject)
         if not os.path.exists(os.path.split(save_path)[0]):
             os.mkdir(os.path.split(save_path)[0])
