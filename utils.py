@@ -7,8 +7,9 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from sklearn.decomposition import PCA
-#from mne_icalabel import label_components
-#from pyprep.prep_pipeline import PrepPipeline
+
+# from mne_icalabel import label_components
+# from pyprep.prep_pipeline import PrepPipeline
 from mne.preprocessing import ICA
 import torch
 
@@ -118,9 +119,7 @@ def reorder_channels_chbmit(raw):
         ch_map[old_name] = current_order[n]
     raw.rename_channels(ch_map)
     raw.reorder_channels(ch_demanded_order)
-    montage = mne.channels.read_custom_montage(
-        Path("data/chb_mit_ch_locs.loc")
-    )
+    montage = mne.channels.read_custom_montage(Path("data/chb_mit_ch_locs.loc"))
     raw.set_montage(montage)
 
 
@@ -131,11 +130,11 @@ def run_preprocessing(
     freq_h=30.0,
     sfreq=256.0,
     powerline_freq=50.0,
-    avg_ref=False, ##Caution ! this needs to be paid attention to!
+    avg_ref=False,  ##Caution ! this needs to be paid attention to!
     apply_pca=True,
     apply_ica=False,
     informax=False,
-    discard_first_n_components : int = 2
+    discard_first_n_components: int = 2,
 ):
     """Runs preprocessing on given mne.raw instance."""
     if apply_ica and apply_pca:
@@ -144,7 +143,9 @@ def run_preprocessing(
         )
 
     raw.load_data()
-    raw.filter(l_freq=freq_l, h_freq=freq_h, h_trans_bandwidth=1).notch_filter(np.arange(powerline_freq,sfreq/2,powerline_freq))
+    raw.filter(l_freq=freq_l, h_freq=freq_h, h_trans_bandwidth=1).notch_filter(
+        np.arange(powerline_freq, sfreq / 2, powerline_freq)
+    )
     if avg_ref:
         raw.set_eeg_reference()
     if apply_ica:
@@ -170,7 +171,11 @@ def run_preprocessing(
         components = pca.components_
         mu = pca.mean_
         transform_raw = pca.transform(raw._data)
-        raw._data = np.squeeze(mu + transform_raw[:, discard_first_n_components:] @ components[discard_first_n_components:]) ## remove first two components
+        raw._data = np.squeeze(
+            mu
+            + transform_raw[:, discard_first_n_components:]
+            @ components[discard_first_n_components:]
+        )  ## remove first two components
 
     return raw
 
@@ -216,7 +221,7 @@ def preprocess_dataset_seizures(
     subjects_with_seizures_path, dataset_dirpath, preprocessed_dirpath
 ):
     """Runs full preprocessing on the dataset cointained in the folder (only on seizure recordings).
-    Args:  
+    Args:
         subject_with_seizures_path: path to a text file containing recordings with seizures.
     The names have to be a row vector, with every row named patient_folder/recording_name.edf.
 
@@ -240,7 +245,7 @@ def preprocess_dataset_seizures(
 
         reorder_channels_chbmit(raw_file)
         ## THIS SHOULD BE PARAMETRIZED AS KWARGS
-        #raw_instance = run_preprocessing(raw_file, apply_pca=False,avg_ref=True, freq_l=0.5, freq_h=30.0)
+        # raw_instance = run_preprocessing(raw_file, apply_pca=False,avg_ref=True, freq_l=0.5, freq_h=30.0)
         raw_instance = raw_file
         save_path = os.path.join(preprocessed_dirpath, subject)
         if not os.path.exists(os.path.split(save_path)[0]):
@@ -248,22 +253,25 @@ def preprocess_dataset_seizures(
         mne.export.export_raw(save_path, raw_instance, fmt="edf")
         print(f"Finished preprocessing subject {subject}.")
 
-def preprocess_dataset_all(subjects_with_seizures_path, dataset_path, preprocessed_dirpath):
+
+def preprocess_dataset_all(
+    subjects_with_seizures_path, dataset_path, preprocessed_dirpath
+):
     subjects_with_seizures = [
         subject[:-1] for subject in open(subjects_with_seizures_path, "r").readlines()
     ]
-    
+
     for folder in os.listdir(dataset_path):
         if not os.path.isdir(os.path.join(dataset_path, folder)):
-            
             print(os.path.isdir(os.path.join(dataset_path, folder)))
             continue
-        
+
         for file in os.listdir(os.path.join(dataset_path, folder)):
-          
             if file.endswith(".edf"):
                 try:
-                    raw_file = load_and_dump_channels(os.path.join(dataset_path, folder, file))
+                    raw_file = load_and_dump_channels(
+                        os.path.join(dataset_path, folder, file)
+                    )
                     if raw_file is None:
                         continue
                 except:
@@ -271,15 +279,20 @@ def preprocess_dataset_all(subjects_with_seizures_path, dataset_path, preprocess
                     continue
                 reorder_channels_chbmit(raw_file)
                 ## THIS SHOULD BE PARAMETRIZED AS KWARGS
-                raw_instance = run_preprocessing(raw_file, apply_pca=True,avg_ref=True, freq_l=0.5, freq_h=30.0)
+                raw_instance = run_preprocessing(
+                    raw_file, apply_pca=True, avg_ref=True, freq_l=0.5, freq_h=30.0
+                )
                 if os.path.join(folder, file) in subjects_with_seizures:
-                    save_path = os.path.join(preprocessed_dirpath, folder, "seizures_"+file)
+                    save_path = os.path.join(
+                        preprocessed_dirpath, folder, "seizures_" + file
+                    )
                 else:
                     save_path = os.path.join(preprocessed_dirpath, folder, file)
                 if not os.path.exists(os.path.split(save_path)[0]):
                     os.mkdir(os.path.split(save_path)[0])
                 mne.export.export_raw(save_path, raw_instance, fmt="edf")
                 print(f"Finished preprocessing subject {folder}/{file}.")
+
 
 def prepare_timestep_array(array, timestep, overlap):
     """Preprocess input array of shape [n_nodes,feature_per_node,samples]
@@ -297,71 +310,82 @@ def prepare_timestep_label(array, timestep, overlap):
     time_to_seizure = array.shape[2]
     seconds = [
         (time_to_seizure - i) / 256
-        for i in range(timestep, array.shape[2]+1, timestep - overlap)
+        for i in range(timestep, array.shape[2] + 1, timestep - overlap)
     ]
     return np.array(seconds)
 
+
 def extract_training_data_and_labels_interictal(
     input_array,
-    samples_per_recording : int = 10, ## number of samples per recording
+    samples_per_recording: int = 10,  ## number of samples per recording
     fs: int = 256,
-    timestep: int = 10, ## in seconds
-    overlap : int = 9, ## in seconds
-    label_value : int = 3
+    timestep: int = 10,  ## in seconds
+    overlap: int = 9,  ## in seconds
+    label_value: int = 3,
 ):
     total_samples = input_array.shape[1]
-    random_start_time = np.random.randint(0,total_samples-samples_per_recording*fs)
+    random_start_time = np.random.randint(0, total_samples - samples_per_recording * fs)
     interictal_period = input_array[
-                :, random_start_time  : random_start_time+samples_per_recording*fs
-            ]
-    final_array = prepare_timestep_array(interictal_period, timestep*fs, overlap*fs)
+        :, random_start_time : random_start_time + samples_per_recording * fs
+    ]
+    final_array = prepare_timestep_array(interictal_period, timestep * fs, overlap * fs)
     labels = np.full([final_array.shape[0]], label_value)
-    
+
     return final_array, labels
+
+
 def extract_training_data_and_labels(
     input_array,
     start_ev_array,
     stop_ev_array,
     fs: int = 256,
-    seizure_lookback: int = 600, ## in seconds
-    sample_timestep: int = 10, ## in seconds
-    inter_overlap: int = 9, ## in seconds
-    ictal_overlap : int = 9, ## in seconds
-    buffer_time : int = 5 ## in seconds
+    seizure_lookback: int = 600,  ## in seconds
+    sample_timestep: int = 10,  ## in seconds
+    preictal_overlap: int = 9,  ## in seconds
+    ictal_overlap: int = 9,  ## in seconds
+    buffer_time: int = 5,  ## in seconds
 ):
-    
     """Function to extract seizure periods and preictal perdiods into samples ready to be put into graph neural network."""
     for n, start_ev in enumerate(start_ev_array):
-
         seizure_lookback = seizure_lookback
 
         prev_event_time = start_ev - stop_ev_array[n - 1] if n > 0 else start_ev
 
-        if prev_event_time > seizure_lookback + buffer_time: ## take into account buffer time after the previous seizure and before current one
-            interictal_period = input_array[
-                :, (start_ev - seizure_lookback - buffer_time) * fs  : (start_ev  - buffer_time)*fs
+        if (
+            prev_event_time > seizure_lookback + buffer_time
+        ):  ## take into account buffer time after the previous seizure and before current one
+            preictal_period = input_array[
+                :,
+                (start_ev - seizure_lookback - buffer_time)
+                * fs : (start_ev - buffer_time)
+                * fs,
             ]
 
         else:
-            interictal_period = input_array[
-                :, (start_ev - prev_event_time + buffer_time) * fs : (start_ev-buffer_time) * fs 
+            preictal_period = input_array[
+                :,
+                (start_ev - prev_event_time + buffer_time)
+                * fs : (start_ev - buffer_time)
+                * fs,
             ]
-    
-        interictal_period = (
-            np.expand_dims(interictal_period.transpose(), axis=2)
+
+        preictal_period = (
+            np.expand_dims(preictal_period.transpose(), axis=2)
             .swapaxes(0, 2)
             .swapaxes(0, 1)
         )  ##reshape for preprocessing
-        
-        interictal_features = prepare_timestep_array(
-            array=interictal_period, timestep=sample_timestep * fs, overlap=inter_overlap * fs
+
+        preictal_features = prepare_timestep_array(
+            array=preictal_period,
+            timestep=sample_timestep * fs,
+            overlap=preictal_overlap * fs,
         )
-        
-        interictal_event_labels = np.zeros(
-            interictal_features.shape[0]
+
+        preictal_event_labels = np.zeros(
+            preictal_features.shape[0]
         )  ## assign label 0 to every interictal period sample
-        interictal_event_time_labels = prepare_timestep_label(
-            interictal_period, sample_timestep * fs, inter_overlap * fs
+        preictal_event_time_labels = prepare_timestep_label(
+            preictal_period, sample_timestep * fs, preictal_overlap * fs
         )  ## assign time to seizure for every sample [s]
         seizure_period = input_array[:, (start_ev) * fs : (stop_ev_array[n]) * fs]
         seizure_period = (
@@ -369,30 +393,29 @@ def extract_training_data_and_labels(
             .swapaxes(0, 2)
             .swapaxes(0, 1)
         )
-       
+
         seizure_features = prepare_timestep_array(
-            array=seizure_period, timestep=sample_timestep * fs, overlap=ictal_overlap * fs
+            array=seizure_period,
+            timestep=sample_timestep * fs,
+            overlap=ictal_overlap * fs,
         )
-        
+
         seizure_event_labels = np.ones(seizure_features.shape[0])
 
         seizure_event_time_labels = np.full(seizure_features.shape[0], 0)
 
-    
         try:
-            
-            if len(interictal_features.shape) == 4:
-                full_interictal_features = np.concatenate(
-                    (full_interictal_features, interictal_features)
+            if len(preictal_features.shape) == 4:
+                full_preictal_features = np.concatenate(
+                    (full_preictal_features, preictal_features)
                 )
-                full_interictal_event_labels = np.concatenate(
-                    (full_interictal_event_labels, interictal_event_labels)
+                full_preictal_event_labels = np.concatenate(
+                    (full_preictal_event_labels, preictal_event_labels)
                 )
-                full_interictal_event_time_labels = np.concatenate(
-                    (full_interictal_event_time_labels, interictal_event_time_labels)
+                full_preictal_event_time_labels = np.concatenate(
+                    (full_preictal_event_time_labels, preictal_event_time_labels)
                 )
             if len(seizure_features.shape) == 4:
-          
                 full_seizure_features = np.concatenate(
                     (full_seizure_features, seizure_features)
                 )
@@ -404,30 +427,29 @@ def extract_training_data_and_labels(
                     (full_seizure_event_time_labels, seizure_event_time_labels)
                 )
         except:
-    
-            if len(interictal_features.shape) == 4:
-                full_interictal_features = interictal_features
-                full_interictal_event_labels = interictal_event_labels
-                full_interictal_event_time_labels = interictal_event_time_labels
+            if len(preictal_features.shape) == 4:
+                full_preictal_features = preictal_features
+                full_preictal_event_labels = preictal_event_labels
+                full_preictal_event_time_labels = preictal_event_time_labels
             if len(seizure_features.shape) == 4:
                 full_seizure_features = seizure_features
                 full_seizure_event_labels = seizure_event_labels
                 full_seizure_event_time_labels = seizure_event_time_labels
     try:
         recording_features_array = np.concatenate(
-            (full_interictal_features, full_seizure_features), axis=0
+            (full_preictal_features, full_seizure_features), axis=0
         )
-        
+
         recording_labels_array = np.concatenate(
-            (full_interictal_event_labels, full_seizure_event_labels), axis=0
+            (full_preictal_event_labels, full_seizure_event_labels), axis=0
         ).astype(np.int32)
-        
+
         recording_timestep_array = np.concatenate(
-            (full_interictal_event_time_labels, full_seizure_event_time_labels), axis=0
+            (full_preictal_event_time_labels, full_seizure_event_time_labels), axis=0
         )
     except:
-        return (None,None,None)
- 
+        return (None, None, None)
+
     return (
         recording_features_array,
         recording_labels_array,
@@ -500,7 +522,7 @@ def get_patient_annotations(path_to_file: Path, savedir: Path):
     pd.DataFrame.to_csv(df_end, dst_dir_stop, index_label=False)
 
 
-def get_annotation_files(dataset_path,dst_path):
+def get_annotation_files(dataset_path, dst_path):
     patient_folders = os.listdir(dataset_path)
     for folder in patient_folders:
         patient_folder_path = os.path.join(dataset_path, folder)
@@ -528,80 +550,89 @@ def save_timeseries_array(ds_path, target_path):
             dst_folder = os.path.join(dst_folder, file_target)
             np.save(dst_folder, array_data)
 
-def plv_connectivity(sensors,data):
+
+def plv_connectivity(sensors, data):
     """
     Parameters
     ----------
     sensors : INT
         DESCRIPTION. No of sensors used for capturing EEG
-    data : Array of float 
+    data : Array of float
         DESCRIPTION. EEG Data
-    
+
     Returns
     -------
     connectivity_matrix : Matrix of float
         DESCRIPTION. PLV connectivity matrix
-    connectivity_vector : Vector of flaot 
+    connectivity_vector : Vector of flaot
         DESCRIPTION. PLV connectivity vector
     """
     print("PLV in process.....")
-    
+
     # Predefining connectivity matrix
-    connectivity_matrix = np.zeros([sensors,sensors],dtype=float)
-    
+    connectivity_matrix = np.zeros([sensors, sensors], dtype=float)
+
     # Computing hilbert transform
     data_points = data.shape[-1]
     data_hilbert = np.imag(scipy.signal.hilbert(data))
-    phase = np.arctan(data_hilbert/data)
-    
-    # Computing connectivity matrix 
+    phase = np.arctan(data_hilbert / data)
+
+    # Computing connectivity matrix
     for i in range(sensors):
         for k in range(sensors):
-            connectivity_matrix[i,k] = np.abs(np.sum(np.exp(1j*(phase[i,:]-phase[k,:]))))/data_points
-            
+            connectivity_matrix[i, k] = (
+                np.abs(np.sum(np.exp(1j * (phase[i, :] - phase[k, :])))) / data_points
+            )
+
     # Computing connectivity vector
-   # connectivity_vector = connectivity_matrix[np.triu_indices(connectivity_matrix.shape[0],k=1)] 
-      
+    # connectivity_vector = connectivity_matrix[np.triu_indices(connectivity_matrix.shape[0],k=1)]
+
     # returning connectivity matrix and vector
-    
+
     return connectivity_matrix
 
-def create_recordings_plv(npy_dataset_path,dst_path):
+
+def create_recordings_plv(npy_dataset_path, dst_path):
     patient_list = os.listdir(npy_dataset_path)
     if not os.path.exists(dst_path):
         os.mkdir(dst_path)
-    for patient in patient_list: # iterate over patient names
-        patient_path = os.path.join(npy_dataset_path,patient)
+    for patient in patient_list:  # iterate over patient names
+        patient_path = os.path.join(npy_dataset_path, patient)
         recording_list = os.listdir(patient_path)
-        save_folder = os.path.join(dst_path,patient)
+        save_folder = os.path.join(dst_path, patient)
         if not os.path.exists(save_folder):
             os.mkdir(save_folder)
-        for record in recording_list: # iterate over recordings for a patient
-            recording_path = os.path.join(patient_path,record)
-            data_array = np.load(recording_path) # load the recording
+        for record in recording_list:  # iterate over recordings for a patient
+            recording_path = os.path.join(patient_path, record)
+            data_array = np.load(recording_path)  # load the recording
             starttime = timeit.default_timer()
-            print(f'Calculating PLV for {record}')
-            plv_array = plv_connectivity(data_array.shape[0],data_array)
-            target_filename = os.path.join(save_folder,record)
-            np.save(target_filename,plv_array)
+            print(f"Calculating PLV for {record}")
+            plv_array = plv_connectivity(data_array.shape[0], data_array)
+            target_filename = os.path.join(save_folder, record)
+            np.save(target_filename, plv_array)
             print("The time of calculation is :", timeit.default_timer() - starttime)
-            
+
+
 class EarlyStopping:
     """Credit to https://github.com/Bjarten/early-stopping-pytorch"""
+
     """Early stops the training if validation loss doesn't improve after a given patience."""
-    def __init__(self, patience=7, verbose=False, delta=0, path='checkpoint.pt', trace_func=print):
+
+    def __init__(
+        self, patience=7, verbose=False, delta=0, path="checkpoint.pt", trace_func=print
+    ):
         """
         Args:
             patience (int): How long to wait after last time validation loss improved.
                             Default: 7
-            verbose (bool): If True, prints a message for each validation loss improvement. 
+            verbose (bool): If True, prints a message for each validation loss improvement.
                             Default: False
             delta (float): Minimum change in the monitored quantity to qualify as an improvement.
                             Default: 0
             path (str): Path for the checkpoint to be saved to.
                             Default: 'checkpoint.pt'
             trace_func (function): trace print function.
-                            Default: print            
+                            Default: print
         """
         self.patience = patience
         self.verbose = verbose
@@ -612,8 +643,8 @@ class EarlyStopping:
         self.delta = delta
         self.path = path
         self.trace_func = trace_func
-    def __call__(self, val_loss, model):
 
+    def __call__(self, val_loss, model):
         score = -val_loss
 
         if self.best_score is None:
@@ -622,7 +653,9 @@ class EarlyStopping:
         elif score < self.best_score + self.delta:
             self.counter += 1
             if self.verbose:
-                self.trace_func(f'EarlyStopping counter: {self.counter} out of {self.patience}')
+                self.trace_func(
+                    f"EarlyStopping counter: {self.counter} out of {self.patience}"
+                )
             if self.counter >= self.patience:
                 self.early_stop = True
         else:
@@ -631,8 +664,10 @@ class EarlyStopping:
             self.counter = 0
 
     def save_checkpoint(self, val_loss, model):
-        '''Saves model when validation loss decrease.'''
+        """Saves model when validation loss decrease."""
         if self.verbose:
-            self.trace_func(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
+            self.trace_func(
+                f"Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ..."
+            )
         torch.save(model.state_dict(), self.path)
         self.val_loss_min = val_loss

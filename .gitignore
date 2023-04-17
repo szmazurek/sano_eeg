@@ -1,4 +1,4 @@
-sano_env/
+sano_venv/
 __pycache__
 npy_data/
 data/
