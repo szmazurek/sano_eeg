@@ -321,12 +321,16 @@ def extract_training_data_and_labels_interictal(
     fs: int = 256,
     timestep: int = 10,  ## in seconds
     overlap: int = 9,  ## in seconds
-    label_value: int = 3,
+    label_value: int = 2,
 ):
-    total_samples = input_array.shape[1]
-    random_start_time = np.random.randint(0, total_samples - samples_per_recording * fs)
+    total_samples = input_array.shape[2]
+    random_start_time = np.random.randint(
+        0, total_samples - samples_per_recording * fs * timestep
+    )
     interictal_period = input_array[
-        :, random_start_time : random_start_time + samples_per_recording * fs
+        :,
+        :,
+        random_start_time : random_start_time + samples_per_recording * fs * timestep,
     ]
     final_array = prepare_timestep_array(interictal_period, timestep * fs, overlap * fs)
     labels = np.full([final_array.shape[0]], label_value)
