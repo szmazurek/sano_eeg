@@ -42,9 +42,9 @@ import time
 import logging
 from argparse import ArgumentParser
 
-logging.basicConfig(filename="newfile.log",
-                    format='%(asctime)s %(message)s',
-                    filemode='w')
+logging.basicConfig(
+    filename="newfile.log", format="%(asctime)s %(message)s", filemode="w"
+)
 logger = logging.getLogger()
 logger.setLevel(0)
 torch_geometric.seed_everything(42)
@@ -321,7 +321,7 @@ class SeizureDataLoader:
     def _balance_classes(self):
         negative_label = self._label_counts[0]
         positive_label = self._label_counts[1]
-        
+
         print(f"Number of negative samples pre removal {negative_label}")
         print(f"Number of positive samples pre removal {positive_label}")
         imbalance = negative_label - positive_label
@@ -337,10 +337,12 @@ class SeizureDataLoader:
         self._edge_weights = np.delete(
             self._edge_weights, obj=indices_to_discard, axis=0
         )
-        self._patient_number = np.delete(self._patient_number, obj=indices_to_discard,axis=0)
+        self._patient_number = np.delete(
+            self._patient_number, obj=indices_to_discard, axis=0
+        )
 
     def _standardize_data(self, features, labels, loso_features=None):
-        indexes = np.where(labels == 0)[0]  
+        indexes = np.where(labels == 0)[0]
         features_negative = features[indexes]
         channel_mean = features_negative.mean()
         channel_std = features_negative.std()
@@ -472,7 +474,9 @@ class SeizureDataLoader:
                 print(f"Applying smote on loso patient {patient} features")
                 smote_start = time.time()
                 features, labels = self._apply_smote(features, labels)
-                logging.info(f"Applied one smote in {time.time() - smote_start} for patient {patient}")
+                logging.info(
+                    f"Applied one smote in {time.time() - smote_start} for patient {patient}"
+                )
 
             time_labels = np.expand_dims(time_labels.astype(np.int32), 1)
             labels = labels.reshape((labels.shape[0], 1)).astype(np.float32)
@@ -482,7 +486,7 @@ class SeizureDataLoader:
                 dtype=torch.float32,
             )
             if patient == self.loso_patient:
-                #logging.info(f"Adding recording {record} of patient {patient}")
+                # logging.info(f"Adding recording {record} of patient {patient}")
                 try:
                     self._val_features_dict[patient] = np.concatenate(
                         (self._val_features_dict[patient], features), axis=0
@@ -534,7 +538,7 @@ class SeizureDataLoader:
                         (self._patient_number_dict[patient], patient_number)
                     )
                 except:
-                    #print("Creating initial attributes")
+                    # print("Creating initial attributes")
                     self._features_dict[patient] = features
                     self._labels_dict[patient] = labels
                     self._time_labels_dict[patient] = time_labels
@@ -605,15 +609,15 @@ class SeizureDataLoader:
         self._get_labels_count()
         if self.balance:
             self._balance_classes()
-        
+
         print(f"Finished processing in {time.time() - start_time} seconds")
         print(f"Features shape {self._features.shape}")
 
         start_time_preprocessing = time.time()
         self._standardize_data(self._features, self._labels, self._val_features)
-        
+
         self._get_edges()
-        #self._get_labels_count()
+        # self._get_labels_count()
         if self.hjorth:
             self._features = self._calculate_hjorth_features(self._features)
         self._array_to_tensor()
@@ -844,7 +848,7 @@ class GATv2(torch.nn.Module):
         self.out_features = 128
         n_heads = 4
         self.recurrent_1 = GATv2Conv(
-            int((sfreq * timestep / 2) + 1),
+            3,
             32,
             heads=n_heads,
             negative_slope=0.01,
@@ -908,17 +912,16 @@ class GATv2(torch.nn.Module):
         return h.squeeze(1)
 
 
-
 parser = ArgumentParser()
 parser.add_argument("--timestep", type=int, default=6)
 parser.add_argument("--ictal_overlap", type=int, default=0)
 parser.add_argument("--inter_overlap", type=int, default=0)
-parser.add_argument("--smote", action='store_true')
-parser.add_argument("--weights", action='store_true')
-parser.add_argument("--undersample", action='store_true')
+parser.add_argument("--smote", action="store_true")
+parser.add_argument("--weights", action="store_true")
+parser.add_argument("--undersample", action="store_true")
 parser.add_argument("--exp_name", type=str, default="eeg_exp")
-parser.add_argument("--data_dir", type=str,default='data/npy_data')
-parser.add_argument("--epochs", type=int,default=25)
+parser.add_argument("--data_dir", type=str, default="data/npy_data")
+parser.add_argument("--epochs", type=int, default=25)
 args = parser.parse_args()
 TIMESTEP = args.timestep
 INTER_OVERLAP = args.inter_overlap
@@ -934,8 +937,8 @@ DOWNSAMPLING_F = 60
 TRAIN_TEST_SPLIT = 0.10
 SEIZURE_LOOKBACK = 600
 BATCH_SIZE = 256
-FFT = True
-HJORTH = False
+FFT = False
+HJORTH = True
 print("Timestep: ", TIMESTEP)
 print("Interictal overlap: ", INTER_OVERLAP)
 print("Ictal overlap: ", ICTAL_OVERLAP)
@@ -944,7 +947,7 @@ print("Weights: ", WEIGHTS_FLAG)
 print("Undersample: ", UNDERSAMPLE)
 print("Epochs: ", EPOCHS)
 device = torch.device("cuda:0")
-for loso_patient in os.listdir(DS_PATH)[22:]:
+for loso_patient in os.listdir(DS_PATH):
     torch_geometric.seed_everything(42)
     dataloader = SeizureDataLoader(
         npy_dataset_path=Path(DS_PATH),
@@ -965,11 +968,12 @@ for loso_patient in os.listdir(DS_PATH)[22:]:
         batch_size=BATCH_SIZE,
         smote=SMOTE_FLAG,
     )
-    
 
-    
     train_loader, valid_loader, loso_loader = dataloader.get_dataset()
-    alpha = list(dataloader._label_counts.values())[0]/list(dataloader._label_counts.values())[1]
+    alpha = (
+        list(dataloader._label_counts.values())[0]
+        / list(dataloader._label_counts.values())[1]
+    )
     ## normal loop
     print(f"Alpha is {alpha} for patient{loso_patient}")
     CONFIG = dict(
@@ -984,8 +988,7 @@ for loso_patient in os.listdir(DS_PATH)[22:]:
         batch_size=BATCH_SIZE,
         smote=SMOTE_FLAG,
         weights=WEIGHTS_FLAG,
-        alpha = alpha,
-        
+        alpha=alpha,
     )
     wandb.init(
         project="sano_eeg",
@@ -994,11 +997,11 @@ for loso_patient in os.listdir(DS_PATH)[22:]:
         job_type="hjorth_features",
         config=CONFIG,
     )
-    checkpoint_path = f'checkpoints/checkpoint_{EXP_NAME}.pt'
-    early_stopping = utils.EarlyStopping(patience=3, verbose=True, path = checkpoint_path)
+    checkpoint_path = f"checkpoints/checkpoint_{EXP_NAME}.pt"
+    early_stopping = utils.EarlyStopping(patience=3, verbose=True, path=checkpoint_path)
     model = GATv2(TIMESTEP, 60, batch_size=32).to(device)
     if WEIGHTS_FLAG:
-        loss_fn =  nn.BCEWithLogitsLoss(pos_weight=torch.full([1], alpha)).to(device)
+        loss_fn = nn.BCEWithLogitsLoss(pos_weight=torch.full([1], alpha)).to(device)
     else:
         loss_fn = nn.BCEWithLogitsLoss().to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.00001, weight_decay=0.0001)
