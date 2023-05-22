@@ -205,12 +205,13 @@ class GATv2Lightning(pl.LightningModule):
         h = F.leaky_relu(h)
         h = self.dropout(h)
         h = self.fc3(h).squeeze(1)
+
         return h
 
     def unpack_data_batch(self, data_batch):
         x = data_batch.x
         edge_index = data_batch.edge_index
-        y = data_batch.y
+        y = data_batch.y.long()
         pyg_batch = data_batch.batch
         edge_attr = data_batch.edge_attr  ## unused for now
         return x, edge_index, y, pyg_batch, edge_attr
@@ -219,7 +220,7 @@ class GATv2Lightning(pl.LightningModule):
         x, edge_index, y, pyg_batch, edge_attr = self.unpack_data_batch(batch)
         y_hat = self.forward(x, edge_index, pyg_batch)
         loss = self.loss(y_hat, y)
-        self.training_step_outputs.append(y_hat.detach())
+        self.training_step_outputs.append(y_hat)
         self.training_step_gt.append(y)
         batch_size = pyg_batch.max() + 1
         self.log(
