@@ -207,18 +207,29 @@ class GATv2Lightning(pl.LightningModule):
         h = self.fc3(h).squeeze(1)
         return h
 
+    def unpack_data_batch(self, data_batch):
+        x = data_batch.x
+        edge_index = data_batch.edge_index
+        y = data_batch.y
+        pyg_batch = data_batch.batch
+        edge_attr = data_batch.edge_attr  ## unused for now
+        return x, edge_index, y, pyg_batch, edge_attr
+
     def training_step(self, batch, batch_idx):
-        x = batch.x
-        edge_index = batch.edge_index
-        y = batch.y
-        pyg_batch = batch.batch
-        edge_attr = batch.edge_attr  ## unused for now
+        x, edge_index, y, pyg_batch, edge_attr = self.unpack_data_batch(batch)
         y_hat = self.forward(x, edge_index, pyg_batch)
         loss = self.loss(y_hat, y)
         self.training_step_outputs.append(y_hat)
         self.training_step_gt.append(y)
+        batch_size = pyg_batch.max() + 1
         self.log(
-            "train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True
+            "train_loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+            batch_size=batch_size,
         )
         return loss
 
@@ -243,16 +254,21 @@ class GATv2Lightning(pl.LightningModule):
         self.training_step_gt.clear()
 
     def validation_step(self, batch, batch_idx):
-        x = batch.x
-        edge_index = batch.edge_index
-        y = batch.y
-        pyg_batch = batch.batch
-        edge_attr = batch.edge_attr
+        x, edge_index, y, pyg_batch, edge_attr = self.unpack_data_batch(batch)
         y_hat = self.forward(x, edge_index, pyg_batch, edge_attr)
         loss = self.loss(y_hat, y)
         self.validation_step_outputs.append(y_hat)
         self.validation_step_gt.append(y)
-        self.log("val_loss", loss, on_step=True, on_epoch=True, logger=True)
+        batch_size = pyg_batch.max() + 1
+        self.log(
+            "val_loss",
+            loss,
+            on_step=False,
+            on_epoch=True,
+            logger=True,
+            prog_bar=True,
+            batch_size=batch_size,
+        )
         return loss
 
     def on_validation_epoch_end(self) -> None:
@@ -276,16 +292,21 @@ class GATv2Lightning(pl.LightningModule):
         self.validation_step_gt.clear()
 
     def test_step(self, batch, batch_idx):
-        x = batch.x
-        edge_index = batch.edge_index
-        y = batch.y
-        pyg_batch = batch.batch
-        edge_attr = batch.edge_attr
+        x, edge_index, y, pyg_batch, edge_attr = self.unpack_data_batch(batch)
         y_hat = self.forward(x, edge_index, pyg_batch, edge_attr)
         loss = self.loss(y_hat, y)
         self.test_step_outputs.append(y_hat)
         self.test_step_gt.append(y)
-        self.log("test_loss", loss, on_step=True, on_epoch=True, logger=True)
+        batch_size = pyg_batch.max() + 1
+        self.log(
+            "test_loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            logger=True,
+            prog_bar=True,
+            batch_size=batch_size,
+        )
         return loss
 
     def on_test_epoch_end(self) -> None:
@@ -307,6 +328,14 @@ class GATv2Lightning(pl.LightningModule):
         )
         self.test_step_outputs.clear()
         self.test_step_gt.clear()
+
+    def predict_step(self, batch, batch_idx, dataloader_idx=None):
+        x = batch.x
+        edge_index = batch.edge_index
+        pyg_batch = batch.batch
+        edge_attr = batch.edge_attr
+        y_hat = self.forward(x, edge_index, pyg_batch, edge_attr)
+        return y_hat
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
