@@ -8,7 +8,7 @@ Branches:
 ## How to use this repo:
 
 1. Run data extraction as described in README.md in raw_dataset folder
-2. In pipeline_tests - the notebook named new_main_experiment.ipynb contains the code for ongoing experiemnts. \
+2. In pipeline_tests - the notebook named main_experiments.ipynb contains the code for ongoing experiemnts. \
 It is subject to changes and ongoing work is happening here. Main parts are SeizureDataLoader class and training loop along with models.
 The models and datloader are not in the seperate files as debugging is easier this way in the Jupyter. Dataloader is terribly bloated \
 and needs to be refactored (although some things are left on purpose as they may be needed in further develeopment stages).
