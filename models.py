@@ -219,7 +219,7 @@ class GATv2Lightning(pl.LightningModule):
         x, edge_index, y, pyg_batch, edge_attr = self.unpack_data_batch(batch)
         y_hat = self.forward(x, edge_index, pyg_batch)
         loss = self.loss(y_hat, y)
-        self.training_step_outputs.append(y_hat)
+        self.training_step_outputs.append(y_hat.detach())
         self.training_step_gt.append(y)
         batch_size = pyg_batch.max() + 1
         self.log(
