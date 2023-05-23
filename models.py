@@ -211,7 +211,11 @@ class GATv2Lightning(pl.LightningModule):
     def unpack_data_batch(self, data_batch):
         x = data_batch.x
         edge_index = data_batch.edge_index
-        y = data_batch.y.long()
+        y = (
+            data_batch.y.long()
+            if self.classification_mode == "multiclass"
+            else data_batch.y
+        )
         pyg_batch = data_batch.batch
         edge_attr = data_batch.edge_attr  ## unused for now
         return x, edge_index, y, pyg_batch, edge_attr
