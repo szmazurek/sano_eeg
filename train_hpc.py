@@ -32,6 +32,8 @@ from mne_features.univariate import (
     compute_variance,
     compute_hjorth_complexity,
     compute_hjorth_mobility,
+    compute_higuchi_fd,
+    compute_katz_fd,
 )
 import torchaudio
 import mne_features
@@ -48,7 +50,7 @@ logging.basicConfig(
 logger = logging.getLogger()
 logger.setLevel(0)
 torch_geometric.seed_everything(42)
-
+torch.manual_seed(42)
 api_key = open("wandb_api_key.txt", "r")
 key = api_key.read()
 api_key.close()
@@ -204,15 +206,7 @@ class SeizureDataLoader:
                         np.expand_dims(compute_variance(feature), 1),
                         np.expand_dims(compute_hjorth_mobility(feature), 1),
                         np.expand_dims(compute_hjorth_complexity(feature), 1),
-                        np.expand_dims([len(find_peaks(sig)[0]) for sig in feature], 1),
-                        np.expand_dims(np.sum(zero_crossings(feature), axis=1), 1),
-                        np.expand_dims(
-                            [
-                                peak_prominences(sig, find_peaks(sig)[0])[0].mean()
-                                for sig in feature
-                            ],
-                            1,
-                        ),
+                        np.expand_dims(),
                     ],
                     axis=1,
                 )
@@ -341,11 +335,13 @@ class SeizureDataLoader:
             self._patient_number, obj=indices_to_discard, axis=0
         )
 
-    def _standardize_data(self, features, labels, loso_features=None):
-        indexes = np.where(labels == 0)[0]
-        features_negative = features[indexes]
-        channel_mean = features_negative.mean()
-        channel_std = features_negative.std()
+    def _standardize_data(self, features, labels, loso_features=None) -> None:
+        # indexes = np.where(labels == 0)[0]
+        # features_negative = features[indexes]
+        # channel_mean = features_negative.mean()
+        # channel_std = features_negative.std()
+        channel_mean = features.mean()
+        channel_std = features.std()
         # if features_negative.shape[0] == 1:
         #     channel_mean = features_negative.mean(2).squeeze()
         #     channel_std = features_negative.std(2).squeeze()
@@ -549,7 +545,7 @@ class SeizureDataLoader:
 
     def _get_labels_features_edge_weights_interictal(
         self, samples_recording: int = None
-    ):
+    ) -> None:
         patient_list = os.listdir(self.npy_dataset_path)
         interictal_samples = len(np.where(self._labels == 0))
         loso_interictal_samples = len(np.where(self._val_labels == 0))
@@ -848,7 +844,7 @@ class GATv2(torch.nn.Module):
         self.out_features = 128
         n_heads = 4
         self.recurrent_1 = GATv2Conv(
-            3,
+            int((sfreq * timestep / 2) + 1),
             32,
             heads=n_heads,
             negative_slope=0.01,
@@ -916,9 +912,11 @@ parser = ArgumentParser()
 parser.add_argument("--timestep", type=int, default=6)
 parser.add_argument("--ictal_overlap", type=int, default=0)
 parser.add_argument("--inter_overlap", type=int, default=0)
-parser.add_argument("--smote", action="store_true")
-parser.add_argument("--weights", action="store_true")
-parser.add_argument("--undersample", action="store_true")
+parser.add_argument("--smote", action="store_true", default=False)
+parser.add_argument("--weights", action="store_true", default=False)
+parser.add_argument("--undersample", action="store_true", default=False)
+parser.add_argument("--fft", action="store_true", default=False)
+parser.add_argument("--hjorth", action="store_true", default=False)
 parser.add_argument("--exp_name", type=str, default="eeg_exp")
 parser.add_argument("--data_dir", type=str, default="data/npy_data")
 parser.add_argument("--epochs", type=int, default=25)
@@ -932,13 +930,14 @@ WEIGHTS_FLAG = args.weights
 UNDERSAMPLE = args.undersample
 EXP_NAME = args.exp_name
 EPOCHS = args.epochs
+FFT = args.fft
+HJORTH = args.hjorth
 SFREQ = 256
 DOWNSAMPLING_F = 60
 TRAIN_TEST_SPLIT = 0.10
 SEIZURE_LOOKBACK = 600
 BATCH_SIZE = 256
-FFT = False
-HJORTH = True
+
 print("Timestep: ", TIMESTEP)
 print("Interictal overlap: ", INTER_OVERLAP)
 print("Ictal overlap: ", ICTAL_OVERLAP)
@@ -946,9 +945,12 @@ print("Smote: ", SMOTE_FLAG)
 print("Weights: ", WEIGHTS_FLAG)
 print("Undersample: ", UNDERSAMPLE)
 print("Epochs: ", EPOCHS)
+print("FFT: ", FFT)
+print("Hjorth: ", HJORTH)
 device = torch.device("cuda:0")
 for loso_patient in os.listdir(DS_PATH):
     torch_geometric.seed_everything(42)
+    torch.manual_seed(42)
     dataloader = SeizureDataLoader(
         npy_dataset_path=Path(DS_PATH),
         event_tables_path=Path("data/event_tables"),
@@ -991,10 +993,10 @@ for loso_patient in os.listdir(DS_PATH):
         alpha=alpha,
     )
     wandb.init(
-        project="sano_eeg",
+        project="sano_eeg_matrix_weights",
         group=EXP_NAME,
         name=loso_patient,
-        job_type="hjorth_features",
+        job_type="initial_experiments",
         config=CONFIG,
     )
     checkpoint_path = f"checkpoints/checkpoint_{EXP_NAME}.pt"
@@ -1040,7 +1042,7 @@ for loso_patient in os.listdir(DS_PATH):
 
             x = torch.square(torch.abs(x))
 
-            y_hat = model(x, edge_index, None, batch_idx)
+            y_hat = model(x, edge_index, edge_attr, batch_idx)
             loss = loss_fn(y_hat, y)
             # loss = torchvision.ops.sigmoid_focal_loss(y_hat,y,alpha=alpha*0.1,gamma=2,reduction='mean')
             epoch_loss += loss
@@ -1099,7 +1101,7 @@ for loso_patient in os.listdir(DS_PATH):
                 # x = (x-x.mean(dim=0))/x.std(dim=0)
                 x = torch.square(torch.abs(x))
 
-                y_hat_val = model(x, edge_index, None, batch_idx)
+                y_hat_val = model(x, edge_index, edge_attr, batch_idx)
                 loss_valid = loss_fn(y_hat_val, y_val)
                 # loss_valid = torchvision.ops.sigmoid_focal_loss(y_hat,y,alpha=alpha*0.1,gamma=2,reduction='mean')
                 epoch_loss_valid += loss_valid

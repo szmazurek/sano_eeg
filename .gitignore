@@ -12,3 +12,4 @@ wandb_api_key.txt
 checkpoints/
 wandb/
 *.log
+.vscode/
