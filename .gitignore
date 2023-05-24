@@ -10,3 +10,6 @@ lightning_logs/
 *.sh
 wandb_api_key.txt
 *.pt
+*env
+*log
+.vscode
