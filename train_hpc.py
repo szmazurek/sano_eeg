@@ -1136,7 +1136,7 @@ for loso_patient in os.listdir(DS_PATH):
         alpha=alpha,
     )
     wandb.init(
-        project="sano_eeg_matrix_weights",
+        project="sano_eeg",
         group=EXP_NAME,
         name=loso_patient,
         job_type="initial_experiments",
@@ -1148,13 +1148,12 @@ for loso_patient in os.listdir(DS_PATH):
     early_stopping = pl.callbacks.EarlyStopping(
         monitor="val_loss", patience=6, verbose=False, mode="min"
     )
-    epochs = 1
     callbacks = [early_stopping]
     trainer = pl.Trainer(
         accelerator="auto",
         precision=precision,
         devices=1,
-        max_epochs=epochs,
+        max_epochs=EPOCHS,
         enable_progress_bar=True,
         strategy=strategy,
         deterministic=True,
@@ -1165,6 +1164,7 @@ for loso_patient in os.listdir(DS_PATH):
 
     model = GATv2Lightning(6, n_classes=2)
     trainer.fit(model, train_loader, valid_loader)
+    trainer.test(model, dataloaders=loso_loader)
     # checkpoint_path = f"checkpoints/checkpoint_{EXP_NAME}.pt"
     # early_stopping = utils.EarlyStopping(patience=3, verbose=True, path=checkpoint_path)
     # model = GATv2(TIMESTEP, 60, batch_size=32).to(device)
