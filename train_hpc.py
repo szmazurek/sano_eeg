@@ -1075,7 +1075,7 @@ DOWNSAMPLING_F = 60
 TRAIN_TEST_SPLIT = 0.10
 SEIZURE_LOOKBACK = 600
 BATCH_SIZE = 256
-
+ 
 print("Timestep: ", TIMESTEP)
 print("Interictal overlap: ", INTER_OVERLAP)
 print("Ictal overlap: ", ICTAL_OVERLAP)
