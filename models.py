@@ -126,6 +126,7 @@ class GATv2Lightning(pl.LightningModule):
         fft_mode: bool = False,
         lr=0.00001,
         weight_decay=0.0001,
+        use_wandb: bool = False,
     ):
         super(GATv2Lightning, self).__init__()
         assert n_classes > 1, "n_classes must be greater than 1"
