@@ -3,7 +3,6 @@ import os
 import utils
 import warnings
 import scipy
-import sklearn
 import torch
 import torch_geometric
 import pandas as pd
@@ -60,7 +59,6 @@ def get_lr(optimizer):
         return param_group["lr"]
 
 
-# TODO think about using kwargs argument here to specify args for dataloader
 # TODO think about using kwargs argument here to specify args for dataloader
 @dataclass
 class SeizureDataLoader:
@@ -1043,7 +1041,8 @@ class SeizureDataLoader:
             return (*loaders, loso_dataloader)
 
         return (*loaders,)
-
+## this model has to be there - for some reasons it will crash with WandbLogger if the model is in different file
+## probably some bug in pytorch lightning, could not get around it
 
 parser = ArgumentParser()
 parser.add_argument("--timestep", type=int, default=6)
@@ -1142,9 +1141,11 @@ for loso_patient in os.listdir(DS_PATH):
         job_type="initial_experiments",
         config=CONFIG,
     )
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
     precision = "bf16-mixed" if device == "cpu" else "16-mixed"
-    strategy = pl.strategies.SingleDeviceStrategy(device=device)
+    torch_device = torch.device(device)
+    strategy = pl.strategies.SingleDeviceStrategy(device=torch_device)
+    wandb_logger = pl.loggers.WandbLogger(log_model=False)
     early_stopping = pl.callbacks.EarlyStopping(
         monitor="val_loss", patience=6, verbose=False, mode="min"
     )
@@ -1156,15 +1157,17 @@ for loso_patient in os.listdir(DS_PATH):
         max_epochs=EPOCHS,
         enable_progress_bar=True,
         strategy=strategy,
-        deterministic=True,
+        deterministic=False,
         log_every_n_steps=1,
         enable_model_summary=False,
+        logger=wandb_logger,
         callbacks=callbacks,
     )
 
     model = GATv2Lightning(6, n_classes=2)
     trainer.fit(model, train_loader, valid_loader)
     trainer.test(model, dataloaders=loso_loader)
+    wandb.finish()
     # checkpoint_path = f"checkpoints/checkpoint_{EXP_NAME}.pt"
     # early_stopping = utils.EarlyStopping(patience=3, verbose=True, path=checkpoint_path)
     # model = GATv2(TIMESTEP, 60, batch_size=32).to(device)
