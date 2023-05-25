@@ -230,7 +230,7 @@ class GATv2Lightning(pl.LightningModule):
         self.log(
             "train_loss",
             loss,
-            on_step=True,
+            on_step=False,
             on_epoch=True,
             prog_bar=True,
             logger=True,
@@ -244,11 +244,12 @@ class GATv2Lightning(pl.LightningModule):
         rec = self.recall(training_step_outputs, training_step_gt)
         spec = self.specificity(training_step_outputs, training_step_gt)
         auroc = self.auroc(training_step_outputs, training_step_gt)
+
         self.log_dict(
             {
-                "train_recall": rec,
+                "train_sensitivity": rec,
                 "train_specificity": spec,
-                "train_auroc": auroc,
+                "train_AUROC": auroc,
             },
             logger=True,
             prog_bar=True,
@@ -284,9 +285,9 @@ class GATv2Lightning(pl.LightningModule):
         auroc = self.auroc(validation_step_outputs, validation_step_gt)
         self.log_dict(
             {
-                "val_recall": rec,
+                "val_sensitivity": rec,
                 "val_specificity": spec,
-                "val_auroc": auroc,
+                "val_AUROC": auroc,
             },
             logger=True,
             prog_bar=True,
@@ -304,9 +305,9 @@ class GATv2Lightning(pl.LightningModule):
         self.test_step_gt.append(y)
         batch_size = pyg_batch.max() + 1
         self.log(
-            "test_loss",
+            "loso_loss",
             loss,
-            on_step=True,
+            on_step=False,
             on_epoch=True,
             logger=True,
             prog_bar=True,
@@ -322,9 +323,9 @@ class GATv2Lightning(pl.LightningModule):
         auroc = self.auroc(test_step_outputs, test_step_gt)
         self.log_dict(
             {
-                "test_recall": rec,
-                "test_specificity": spec,
-                "test_auroc": auroc,
+                "loso_sensitivity": rec,
+                "loso_specificity": spec,
+                "loso_AUROC": auroc,
             },
             logger=True,
             prog_bar=True,

@@ -739,7 +739,7 @@ class SeizureDataLoader:
                     samples_per_recording=samples_per_recording,
                     fs=self.sampling_f,
                     timestep=self.sample_timestep,
-                    overlap=self.preictal_overlap,
+                    overlap=self.inter_overlap,
                 )
             except:
                 print(f"Skipping recording {recording} for patient due to the error")
