@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from sklearn.decomposition import PCA
-
+from mne_features.bivariate import compute_phase_lock_val, compute_spect_corr
 # from mne_icalabel import label_components
 # from pyprep.prep_pipeline import PrepPipeline
 from mne.preprocessing import ICA
@@ -555,8 +555,9 @@ def save_timeseries_array(ds_path, target_path):
             np.save(dst_folder, array_data)
 
 
-def plv_connectivity(sensors, data):
+def plv_connectivity_old(sensors, data):
     """
+    ORGINALLY USED, DEPRECATED IN FAVOUR OF NEW FUNCTION
     Parameters
     ----------
     sensors : INT
@@ -616,6 +617,65 @@ def create_recordings_plv(npy_dataset_path, dst_path):
             np.save(target_filename, plv_array)
             print("The time of calculation is :", timeit.default_timer() - starttime)
 
+
+def compute_plv_matrix(graph : np.ndarray)->np.ndarray:
+    """Compute connectivity matrix via usage of PLV from MNE implementation.
+    Args:
+        graph: (np.ndarray) Single graph with shape [nodes,features] where features represent consecutive time samples and nodes represent
+    electrodes in EEG.
+    Returns:
+        plv_matrix: (np.ndarray) PLV matrix of the input graph.
+    """
+    plv_conn_vector = compute_phase_lock_val(graph)
+
+    n = int(np.sqrt(2 * len(plv_conn_vector)))+1
+
+    # Reshape the flattened array into a square matrix
+    upper_triangular = np.zeros((n, n))
+    upper_triangular[np.triu_indices(n, k=1)] = plv_conn_vector
+
+    # Create an empty matrix for the complete symmetric matrix
+    symmetric_matrix = np.zeros((n, n))
+
+    # Fill the upper triangular part (including the diagonal)
+    symmetric_matrix[np.triu_indices(n)] = upper_triangular[np.triu_indices(n)]
+
+    # Fill the lower triangular part by mirroring the upper triangular
+    plv_matrix = symmetric_matrix + symmetric_matrix.T - np.diag(np.diag(symmetric_matrix))
+
+    # Add 1 to the diagonal elements
+    np.fill_diagonal(plv_matrix, 1)
+    return plv_matrix
+
+def compute_spect_corr_matrix(graph : np.ndarray, sfreq : int) -> np.ndarray:
+    """Compute connectivity matrix via usage of spectral correlation from MNE implementation.
+    Args:
+        graph: (np.ndarray) Single graph with shape [nodes,features] where features represent consecutive time samples and nodes represent
+    electrodes in EEG.
+        sfreq: (int) Sampling frequency of the EEG recording.
+    Returns:
+        spectral_correlation_matrix: (np.ndarray) Spectral correlation matrix of the input graph.
+    
+    """
+    spectral_corr_vector = compute_spect_corr(sfreq,graph,with_eigenvalues=False)
+    n = int(np.sqrt(2 * len(spectral_corr_vector)))+1
+
+    # Reshape the flattened array into a square matrix
+    upper_triangular = np.zeros((n, n))
+    upper_triangular[np.triu_indices(n, k=1)] = spectral_corr_vector
+
+    # Create an empty matrix for the complete symmetric matrix
+    symmetric_matrix = np.zeros((n, n))
+
+    # Fill the upper triangular part (including the diagonal)
+    symmetric_matrix[np.triu_indices(n)] = upper_triangular[np.triu_indices(n)]
+
+    # Fill the lower triangular part by mirroring the upper triangular
+    spectral_correlation_matrix = symmetric_matrix + symmetric_matrix.T - np.diag(np.diag(symmetric_matrix))
+
+    # Add 1 to the diagonal elements
+    np.fill_diagonal(spectral_correlation_matrix, 1)
+    return spectral_correlation_matrix
 
 class EarlyStopping:
     """Credit to https://github.com/Bjarten/early-stopping-pytorch"""

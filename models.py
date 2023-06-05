@@ -190,11 +190,11 @@ class GATv2Lightning(pl.LightningModule):
     def forward(self, x, edge_index, pyg_batch, edge_attr=None):
         if self.fft_mode:
             x = torch.square(torch.abs(x)).float()
-
-        h = self.recurrent_1(x.float(), edge_index=edge_index, edge_attr=edge_attr)
+        
+        h = self.recurrent_1(x, edge_index=edge_index, edge_attr=edge_attr)
         h = self.batch_norm_1(h)
         h = F.leaky_relu(h)
-        h = self.recurrent_2(h, edge_index=edge_index, edge_attr=edge_attr)
+        h = self.recurrent_2(h, edge_index=edge_index, edge_attr=edge_attr.float())
         h = self.batch_norm_2(h)
         h = F.leaky_relu(h)
         h = global_mean_pool(h, pyg_batch)
@@ -210,7 +210,7 @@ class GATv2Lightning(pl.LightningModule):
         return h
 
     def unpack_data_batch(self, data_batch):
-        x = data_batch.x
+        x = data_batch.x.float()
         edge_index = data_batch.edge_index
         y = (
             data_batch.y.long()
@@ -218,13 +218,14 @@ class GATv2Lightning(pl.LightningModule):
             else data_batch.y
         )
         pyg_batch = data_batch.batch
-        edge_attr = data_batch.edge_attr  ## unused for now
+        edge_attr = data_batch.edge_attr.float()
         return x, edge_index, y, pyg_batch, edge_attr
 
     def training_step(self, batch, batch_idx):
         x, edge_index, y, pyg_batch, edge_attr = self.unpack_data_batch(batch)
-        y_hat = self.forward(x, edge_index, pyg_batch)
+        y_hat = self.forward(x, edge_index, pyg_batch,edge_attr)
         loss = self.loss(y_hat, y)
+
         self.training_step_outputs.append(y_hat)
         self.training_step_gt.append(y)
         batch_size = pyg_batch.max() + 1
@@ -261,8 +262,11 @@ class GATv2Lightning(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         x, edge_index, y, pyg_batch, edge_attr = self.unpack_data_batch(batch)
+      
+        
         y_hat = self.forward(x, edge_index, pyg_batch, edge_attr)
         loss = self.loss(y_hat, y)
+        
         self.validation_step_outputs.append(y_hat)
         self.validation_step_gt.append(y)
         batch_size = pyg_batch.max() + 1
