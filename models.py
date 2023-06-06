@@ -191,10 +191,10 @@ class GATv2Lightning(pl.LightningModule):
         if self.fft_mode:
             x = torch.square(torch.abs(x)).float()
         
-        h = self.recurrent_1(x, edge_index=edge_index, edge_attr=edge_attr)
+        h = self.recurrent_1(x, edge_index=edge_index, edge_attr=None)
         h = self.batch_norm_1(h)
         h = F.leaky_relu(h)
-        h = self.recurrent_2(h, edge_index=edge_index, edge_attr=edge_attr.float())
+        h = self.recurrent_2(h, edge_index=edge_index, edge_attr=None)
         h = self.batch_norm_2(h)
         h = F.leaky_relu(h)
         h = global_mean_pool(h, pyg_batch)

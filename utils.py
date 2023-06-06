@@ -403,13 +403,16 @@ def extract_training_data_and_labels(
             timestep=sample_timestep * fs,
             overlap=ictal_overlap * fs,
         )
-
+  
         seizure_event_labels = np.ones(seizure_features.shape[0])
 
         seizure_event_time_labels = np.full(seizure_features.shape[0], 0)
+        # if len(preictal_features.shape) != 4 or len(seizure_features.shape) != 4:
+        #     continue
 
         try:
-            if len(preictal_features.shape) == 4:
+            if len(preictal_features.shape) == 4:# and preictal_features.shape[0] == int(seizure_lookback/sample_timestep):
+              #  print(f"Adding correct preictal features to the dataset.", preictal_features.shape)
                 full_preictal_features = np.concatenate(
                     (full_preictal_features, preictal_features)
                 )
@@ -430,8 +433,9 @@ def extract_training_data_and_labels(
                 full_seizure_event_time_labels = np.concatenate(
                     (full_seizure_event_time_labels, seizure_event_time_labels)
                 )
-        except:
-            if len(preictal_features.shape) == 4:
+        except NameError:
+            if len(preictal_features.shape) == 4: # and preictal_features.shape[0] == int(seizure_lookback/sample_timestep):
+               # print(f"Adding correct preictal features to the dataset.", preictal_features.shape)
                 full_preictal_features = preictal_features
                 full_preictal_event_labels = preictal_event_labels
                 full_preictal_event_time_labels = preictal_event_time_labels
@@ -451,9 +455,21 @@ def extract_training_data_and_labels(
         recording_timestep_array = np.concatenate(
             (full_preictal_event_time_labels, full_seizure_event_time_labels), axis=0
         )
-    except:
-        return (None, None, None)
+    except UnboundLocalError:
+       
+        # if 'full_seizure_features' in locals().keys():
+        #     recording_features_array = full_seizure_features
+        #     recording_labels_array = full_seizure_event_labels.astype(np.int32)
+        #     recording_timestep_array = full_seizure_event_time_labels
+        # elif 'full_preictal_features' in locals().keys():
+        #     recording_features_array = full_preictal_features
+        #     recording_labels_array = full_preictal_event_labels.astype(np.int32)
+        #     recording_timestep_array = full_preictal_event_time_labels
+        # else:
+        #     print("No valuable pairs of preictal and seizure periods found.")
+            return (None,None,None)
 
+    
     return (
         recording_features_array,
         recording_labels_array,
