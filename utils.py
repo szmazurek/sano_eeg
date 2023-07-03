@@ -8,6 +8,7 @@ import numpy as np
 from pathlib import Path
 from sklearn.decomposition import PCA
 from mne_features.bivariate import compute_phase_lock_val, compute_spect_corr
+
 # from mne_icalabel import label_components
 # from pyprep.prep_pipeline import PrepPipeline
 from mne.preprocessing import ICA
@@ -403,7 +404,7 @@ def extract_training_data_and_labels(
             timestep=sample_timestep * fs,
             overlap=ictal_overlap * fs,
         )
-  
+
         seizure_event_labels = np.ones(seizure_features.shape[0])
 
         seizure_event_time_labels = np.full(seizure_features.shape[0], 0)
@@ -411,8 +412,10 @@ def extract_training_data_and_labels(
         #     continue
 
         try:
-            if len(preictal_features.shape) == 4:# and preictal_features.shape[0] == int(seizure_lookback/sample_timestep):
-              #  print(f"Adding correct preictal features to the dataset.", preictal_features.shape)
+            if (
+                len(preictal_features.shape) == 4
+            ):  # and preictal_features.shape[0] == int(seizure_lookback/sample_timestep):
+                #  print(f"Adding correct preictal features to the dataset.", preictal_features.shape)
                 full_preictal_features = np.concatenate(
                     (full_preictal_features, preictal_features)
                 )
@@ -434,8 +437,10 @@ def extract_training_data_and_labels(
                     (full_seizure_event_time_labels, seizure_event_time_labels)
                 )
         except NameError:
-            if len(preictal_features.shape) == 4: # and preictal_features.shape[0] == int(seizure_lookback/sample_timestep):
-               # print(f"Adding correct preictal features to the dataset.", preictal_features.shape)
+            if (
+                len(preictal_features.shape) == 4
+            ):  # and preictal_features.shape[0] == int(seizure_lookback/sample_timestep):
+                # print(f"Adding correct preictal features to the dataset.", preictal_features.shape)
                 full_preictal_features = preictal_features
                 full_preictal_event_labels = preictal_event_labels
                 full_preictal_event_time_labels = preictal_event_time_labels
@@ -456,7 +461,6 @@ def extract_training_data_and_labels(
             (full_preictal_event_time_labels, full_seizure_event_time_labels), axis=0
         )
     except UnboundLocalError:
-       
         # if 'full_seizure_features' in locals().keys():
         #     recording_features_array = full_seizure_features
         #     recording_labels_array = full_seizure_event_labels.astype(np.int32)
@@ -467,9 +471,8 @@ def extract_training_data_and_labels(
         #     recording_timestep_array = full_preictal_event_time_labels
         # else:
         #     print("No valuable pairs of preictal and seizure periods found.")
-            return (None,None,None)
+        return (None, None, None)
 
-    
     return (
         recording_features_array,
         recording_labels_array,
@@ -634,17 +637,18 @@ def create_recordings_plv(npy_dataset_path, dst_path):
             print("The time of calculation is :", timeit.default_timer() - starttime)
 
 
-def compute_plv_matrix(graph : np.ndarray)->np.ndarray:
+def compute_plv_matrix(graph: np.ndarray, sfreq=None) -> np.ndarray:
     """Compute connectivity matrix via usage of PLV from MNE implementation.
     Args:
         graph: (np.ndarray) Single graph with shape [nodes,features] where features represent consecutive time samples and nodes represent
     electrodes in EEG.
+        sfreq : (int) Sampling frequency of the EEG recording NOT USED - ONLY FOR COMPATIBILITY WITH OTHER FUNCTIONS IN THE LOADER
     Returns:
         plv_matrix: (np.ndarray) PLV matrix of the input graph.
     """
     plv_conn_vector = compute_phase_lock_val(graph)
 
-    n = int(np.sqrt(2 * len(plv_conn_vector)))+1
+    n = int(np.sqrt(2 * len(plv_conn_vector))) + 1
 
     # Reshape the flattened array into a square matrix
     upper_triangular = np.zeros((n, n))
@@ -657,13 +661,16 @@ def compute_plv_matrix(graph : np.ndarray)->np.ndarray:
     symmetric_matrix[np.triu_indices(n)] = upper_triangular[np.triu_indices(n)]
 
     # Fill the lower triangular part by mirroring the upper triangular
-    plv_matrix = symmetric_matrix + symmetric_matrix.T - np.diag(np.diag(symmetric_matrix))
+    plv_matrix = (
+        symmetric_matrix + symmetric_matrix.T - np.diag(np.diag(symmetric_matrix))
+    )
 
     # Add 1 to the diagonal elements
     np.fill_diagonal(plv_matrix, 1)
     return plv_matrix
 
-def compute_spect_corr_matrix(graph : np.ndarray, sfreq : int) -> np.ndarray:
+
+def compute_spect_corr_matrix(graph: np.ndarray, sfreq: int) -> np.ndarray:
     """Compute connectivity matrix via usage of spectral correlation from MNE implementation.
     Args:
         graph: (np.ndarray) Single graph with shape [nodes,features] where features represent consecutive time samples and nodes represent
@@ -671,10 +678,10 @@ def compute_spect_corr_matrix(graph : np.ndarray, sfreq : int) -> np.ndarray:
         sfreq: (int) Sampling frequency of the EEG recording.
     Returns:
         spectral_correlation_matrix: (np.ndarray) Spectral correlation matrix of the input graph.
-    
+
     """
-    spectral_corr_vector = compute_spect_corr(sfreq,graph,with_eigenvalues=False)
-    n = int(np.sqrt(2 * len(spectral_corr_vector)))+1
+    spectral_corr_vector = compute_spect_corr(sfreq, graph, with_eigenvalues=False)
+    n = int(np.sqrt(2 * len(spectral_corr_vector))) + 1
 
     # Reshape the flattened array into a square matrix
     upper_triangular = np.zeros((n, n))
@@ -687,11 +694,14 @@ def compute_spect_corr_matrix(graph : np.ndarray, sfreq : int) -> np.ndarray:
     symmetric_matrix[np.triu_indices(n)] = upper_triangular[np.triu_indices(n)]
 
     # Fill the lower triangular part by mirroring the upper triangular
-    spectral_correlation_matrix = symmetric_matrix + symmetric_matrix.T - np.diag(np.diag(symmetric_matrix))
+    spectral_correlation_matrix = (
+        symmetric_matrix + symmetric_matrix.T - np.diag(np.diag(symmetric_matrix))
+    )
 
     # Add 1 to the diagonal elements
     np.fill_diagonal(spectral_correlation_matrix, 1)
     return spectral_correlation_matrix
+
 
 class EarlyStopping:
     """Credit to https://github.com/Bjarten/early-stopping-pytorch"""

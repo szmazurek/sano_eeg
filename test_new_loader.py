@@ -15,6 +15,8 @@ from scipy.signal import resample
 import networkx as nx
 from joblib import Parallel, delayed
 from time import time
+
+
 @dataclass
 class HDFDataset_Writer:
     npy_dataset_path: str
@@ -34,10 +36,7 @@ class HDFDataset_Writer:
     used_classes_dict: dict[str] = field(
         default_factory=lambda: {"interictal": True, "preictal": True, "ictal": True}
     )
-    
-    
-    
-        
+
     def _get_event_tables(self, patient_name: str) -> tuple[dict, dict]:
         """Read events for given patient into start and stop times lists from .csv extracted files.
         Args:
@@ -73,8 +72,10 @@ class HDFDataset_Writer:
         recording_list = list(events_dict[recording + ".edf"].values())
         recording_events = [int(x) for x in recording_list if not np.isnan(x)]
         return recording_events
-    
-    def _create_edge_idx_and_attributes(self,connectivity_matrix : np.ndarray , threshold : int =0.0) -> tuple[np.ndarray,np.ndarray]:
+
+    def _create_edge_idx_and_attributes(
+        self, connectivity_matrix: np.ndarray, threshold: int = 0.0
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Create adjacency matrix from connectivity matrix. Edges are created for values above threshold.
         If the edge is created, it has an attribute "weight" with the value of the connectivity measure associated.
         Args:
@@ -87,14 +88,19 @@ class HDFDataset_Writer:
         result_graph = nx.graph.Graph()
         n_nodes = connectivity_matrix.shape[0]
         result_graph.add_nodes_from(range(n_nodes))
-        edge_tuples = [(i,j) for i in range(n_nodes) for j in range(n_nodes) if connectivity_matrix[i,j]>threshold]
+        edge_tuples = [
+            (i, j)
+            for i in range(n_nodes)
+            for j in range(n_nodes)
+            if connectivity_matrix[i, j] > threshold
+        ]
         result_graph.add_edges_from(edge_tuples)
         edge_index = nx.convert_matrix.to_numpy_array(result_graph)
         # connection_indices = np.where(edge_index==1)
         # edge_weights = connectivity_matrix[connection_indices] ## ??
-    
+
         return edge_index
-    
+
     def _features_to_data_list(self, features, edges, labels, edge_weights=None):
         """Converts features, edges and labels to list of torch_geometric.data.Data objects.
         Args:
@@ -115,6 +121,7 @@ class HDFDataset_Writer:
             for i in range(len(features))
         ]
         return data_list
+
     def _apply_smote(self, features, labels):
         """Performs SMOTE oversampling on the dataset. Implemented for preictal vs ictal scenarion only.
         Args:
@@ -152,14 +159,14 @@ class HDFDataset_Writer:
         y_train_smote = np.array(y_train_smote)
         # print(np.unique(y_train_smote,return_counts=True))
         return x_train_smote, y_train_smote
-    
+
     def _initialize_dict(self):
         """Initializes the dictionary with features, labels and edge weights."""
         self.features_patient = {}
         self.labels_patient = {}
         self.edge_idx_patient = {}
         self.edge_weights_patient = {}
-        
+
     def _get_labels_features_edge_weights_seizure(self, patient):
         """Method to extract features, labels and edge weights for seizure and interictal samples."""
 
@@ -172,7 +179,9 @@ class HDFDataset_Writer:
             for recording in os.listdir(patient_path)
             if "seizures" in recording
         ]
-        for n, record in enumerate(recording_list):  # iterate over recordings for a patient
+        for n, record in enumerate(
+            recording_list
+        ):  # iterate over recordings for a patient
             recording_path = os.path.join(patient_path, record)
             record = record.replace(
                 "seizures_", ""
@@ -210,36 +219,58 @@ class HDFDataset_Writer:
                     f"Skipping the recording {record} patients {patient} cuz features are none"
                 )
                 continue
-            
+
             features = features.squeeze(2)
-            conn_matrix_list = [utils.compute_spect_corr_matrix(feature,256) for feature in features]
-            edge_idx = np.stack([self._create_edge_idx_and_attributes(conn_matrix, threshold=np.mean(conn_matrix)) for conn_matrix in conn_matrix_list])
+            conn_matrix_list = [
+                utils.compute_spect_corr_matrix(feature, 256) for feature in features
+            ]
+            edge_idx = np.stack(
+                [
+                    self._create_edge_idx_and_attributes(
+                        conn_matrix, threshold=np.mean(conn_matrix)
+                    )
+                    for conn_matrix in conn_matrix_list
+                ]
+            )
             # edge_idx, edge_weights = zip(*edges_and_weights)
             edge_idx = np.stack(edge_idx)
-           # edge_weights = np.stack(edge_weights)
+            # edge_weights = np.stack(edge_weights)
             if self.downsample:
                 new_sample_count = int(self.downsample * self.sample_timestep)
                 features = resample(features, new_sample_count, axis=2)
             if self.smote:
                 features, labels = self._apply_smote(features, labels)
             labels = labels.reshape((labels.shape[0], 1)).astype(np.float32)
-            
-            self.features_patient[patient] = features if n == 0 else np.concatenate([self.features_patient[patient], features])
-            self.labels_patient[patient] = labels if n == 0 else np.concatenate([self.labels_patient[patient], labels])
-            self.edge_idx_patient[patient] = edge_idx if n == 0 else np.concatenate([self.edge_idx_patient[patient], edge_idx])
-       #     edge_weights_patient = edge_weights if n == 0 else np.concatenate([edge_weights_patient, edge_weights])
-   
 
-            
+            self.features_patient[patient] = (
+                features
+                if n == 0
+                else np.concatenate([self.features_patient[patient], features])
+            )
+            self.labels_patient[patient] = (
+                labels
+                if n == 0
+                else np.concatenate([self.labels_patient[patient], labels])
+            )
+            self.edge_idx_patient[patient] = (
+                edge_idx
+                if n == 0
+                else np.concatenate([self.edge_idx_patient[patient], edge_idx])
+            )
+
+    #     edge_weights_patient = edge_weights if n == 0 else np.concatenate([edge_weights_patient, edge_weights])
+
     def get_dataset(self):
-        config_name = f"lookback_{self.seizure_lookback}_timestep_{self.sample_timestep}_overlap_{self.inter_overlap}_{self.preictal_overlap}_{self.ictal_overlap}_downsample_{self.downsample}_smote_{self.smote}_self_loops_{self.self_loops}_balance_{self.balance}"
+        config_name = f"lookback_{self.seizure_lookback}_timestep_{self.sample_timestep}_overlap_{self.inter_overlap}_{self.preictal_overlap}_{self.ictal_overlap}_downsample_{self.downsample}_smote_{self.smote}_self_loops_{self.self_loops}_balance_{self.balance}_buffer_{self.buffer_time}_connectivity_{self.connectivity_measure}"
         dataset_folder = os.path.join(self.cache_folder, config_name)
         dataset_path = os.path.join(dataset_folder, "dataset.hdf5")
         if os.path.exists(dataset_path):
-            print(f"Folder {config_name} already exists in folder {dataset_folder}. Dataset not created.")
+            print(
+                f"Folder {config_name} already exists in folder {dataset_folder}. Dataset not created."
+            )
             return None
-        os.makedirs(dataset_folder,exist_ok=True)
-        
+        os.makedirs(dataset_folder, exist_ok=True)
+
         patient_list = os.listdir(self.npy_dataset_path)
         self._initialize_dict()
         try:
@@ -248,7 +279,7 @@ class HDFDataset_Writer:
                     self._get_labels_features_edge_weights_seizure(patient)
             else:
                 start = time()
-                Parallel(n_jobs=6, require="sharedmem")(
+                Parallel(n_jobs=6, backend="loky")(
                     delayed(self._get_labels_features_edge_weights_seizure)(patient)
                     for patient in patient_list
                 )
@@ -256,9 +287,15 @@ class HDFDataset_Writer:
             self.hdf5_file = h5py.File(dataset_path, "w")
             for patient in patient_list:
                 self.hdf5_file.create_group(patient)
-                self.hdf5_file[patient].create_dataset("features", data=self.features_patient[patient])
-                self.hdf5_file[patient].create_dataset("labels", data=self.labels_patient[patient])
-                self.hdf5_file[patient].create_dataset("edge_idx", data=self.edge_idx_patient[patient])
+                self.hdf5_file[patient].create_dataset(
+                    "features", data=self.features_patient[patient]
+                )
+                self.hdf5_file[patient].create_dataset(
+                    "labels", data=self.labels_patient[patient]
+                )
+                self.hdf5_file[patient].create_dataset(
+                    "edge_idx", data=self.edge_idx_patient[patient]
+                )
             self.hdf5_file.close()
             print(f"Dataset created in folder {dataset_folder}.")
         except:
@@ -266,7 +303,8 @@ class HDFDataset_Writer:
             os.remove(dataset_path)
             raise Exception("Dataset creation failed. Dataset deleted.")
 
-temp_names = ['cache', 'cache1']
+
+temp_names = ["cache", "cache1"]
 for folder in temp_names:
     torch_geometric.seed_everything(42)
     hdf_writer = HDFDataset_Writer(
@@ -275,7 +313,7 @@ for folder in temp_names:
         cache_folder=folder,
         seizure_lookback=600,
         sample_timestep=9,
-        downsample=60
+        downsample=60,
     )
 
     torch_geometric.seed_everything(42)
