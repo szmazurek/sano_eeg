@@ -218,7 +218,10 @@ class GATv2Lightning(pl.LightningModule):
             else data_batch.y
         )
         pyg_batch = data_batch.batch
-        edge_attr = data_batch.edge_attr.float()
+        try:
+            edge_attr = data_batch.edge_attr.float()
+        except AttributeError:
+            edge_attr = None
         return x, edge_index, y, pyg_batch, edge_attr
 
     def training_step(self, batch, batch_idx):
