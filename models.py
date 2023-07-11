@@ -2,13 +2,11 @@ import torch
 import lightning.pytorch as pl
 from torch import nn
 from torch.nn import functional as F
-from torch_geometric.nn.models import GIN
 from torch_geometric.nn import global_mean_pool, global_add_pool
-from torch_geometric.nn import GCNConv, GATv2Conv, GINConv, GINEConv
+from torch_geometric.nn import GCNConv, GATv2Conv, GINConv
 from torchmetrics import (
     Specificity,
     Recall,
-    F1Score,
     AUROC,
 )
 
@@ -19,7 +17,9 @@ class ClassicGCN(torch.nn.Module):
     def __init__(self, in_features, n_nodes=18):
         super(ClassicGCN, self).__init__()
         self.n_nodes = n_nodes
-        self.recurrent_1 = GCNConv(in_features, 32, add_self_loops=True, improved=False)
+        self.recurrent_1 = GCNConv(
+            in_features, 32, add_self_loops=True, improved=False
+        )
         self.recurrent_2 = GCNConv(32, 64, add_self_loops=True, improved=False)
         self.recurrent_3 = GCNConv(64, 128, add_self_loops=True, improved=False)
         self.fc1 = nn.Linear(128, 64)
@@ -188,9 +188,6 @@ class GATv2Lightning(pl.LightningModule):
         self.test_step_gt = []
 
     def forward(self, x, edge_index, pyg_batch, edge_attr=None):
-        if self.fft_mode:
-            x = torch.square(torch.abs(x)).float()
-
         h = self.recurrent_1(x, edge_index=edge_index, edge_attr=None)
         h = self.batch_norm_1(h)
         h = F.leaky_relu(h)
@@ -210,7 +207,10 @@ class GATv2Lightning(pl.LightningModule):
         return h
 
     def unpack_data_batch(self, data_batch):
-        x = data_batch.x.float()
+        x = data_batch.x
+        if self.fft_mode:
+            x = torch.square(torch.abs(x)).float()
+        x = x.float()
         edge_index = data_batch.edge_index
         y = (
             data_batch.y.long()
@@ -490,7 +490,10 @@ class GINLightning(pl.LightningModule):
         self.test_step_gt = []
 
     def unpack_data_batch(self, data_batch):
-        x = data_batch.x.float()
+        if self.fft_mode:
+            x = torch.square(torch.abs(data_batch.x)).float()
+        else:
+            x = data_batch.x.float()
         edge_index = data_batch.edge_index
         y = (
             data_batch.y.long()
@@ -503,10 +506,7 @@ class GINLightning(pl.LightningModule):
         return x, edge_index, y, pyg_batch, edge_attr
 
     def forward(self, x, edge_index, pyg_batch, edge_attr=None):
-        if self.fft_mode:
-            x = torch.square(torch.abs(x)).float()
-
-        return self.model(x, edge_index, pyg_batch)  ## Edge attr not used!!!
+        return self.model(x, edge_index, pyg_batch)  # Edge attr not used!!!
 
     def training_step(self, batch, batch_idx):
         x, edge_index, y, pyg_batch, edge_attr = self.unpack_data_batch(batch)
