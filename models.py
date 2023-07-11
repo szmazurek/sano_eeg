@@ -190,7 +190,7 @@ class GATv2Lightning(pl.LightningModule):
     def forward(self, x, edge_index, pyg_batch, edge_attr=None):
         if self.fft_mode:
             x = torch.square(torch.abs(x)).float()
-        
+
         h = self.recurrent_1(x, edge_index=edge_index, edge_attr=None)
         h = self.batch_norm_1(h)
         h = F.leaky_relu(h)
@@ -226,7 +226,7 @@ class GATv2Lightning(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x, edge_index, y, pyg_batch, edge_attr = self.unpack_data_batch(batch)
-        y_hat = self.forward(x, edge_index, pyg_batch,edge_attr)
+        y_hat = self.forward(x, edge_index, pyg_batch, edge_attr)
         loss = self.loss(y_hat, y)
 
         self.training_step_outputs.append(y_hat)
@@ -265,11 +265,10 @@ class GATv2Lightning(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         x, edge_index, y, pyg_batch, edge_attr = self.unpack_data_batch(batch)
-      
-        
+
         y_hat = self.forward(x, edge_index, pyg_batch, edge_attr)
         loss = self.loss(y_hat, y)
-        
+
         self.validation_step_outputs.append(y_hat)
         self.validation_step_gt.append(y)
         batch_size = pyg_batch.max() + 1
@@ -352,7 +351,9 @@ class GATv2Lightning(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
-            self.parameters(), lr=self.lr, weight_decay=self.weight_decay
+            self.parameters(),
+            lr=self.lr,
+            weight_decay=self.weight_decay,
         )
         return optimizer
 
@@ -360,7 +361,7 @@ class GATv2Lightning(pl.LightningModule):
 class GINCustom(torch.nn.Module):
     """GIN"""
 
-    def __init__(self, in_features, dim_h=128,dropout = 0.5, n_classes=2):
+    def __init__(self, in_features, dim_h=128, dropout=0.5, n_classes=2):
         super(GINCustom, self).__init__()
         self.conv1 = GINConv(
             nn.Sequential(
@@ -379,7 +380,6 @@ class GINCustom(torch.nn.Module):
                 nn.Linear(dim_h, dim_h),
                 nn.ReLU(),
             ),
-         
         )
         self.conv3 = GINConv(
             nn.Sequential(
@@ -418,7 +418,7 @@ class GINCustom(torch.nn.Module):
         self.lin1 = nn.Linear(dim_h * 3, dim_h * 3)
         self.lin2 = nn.Linear(dim_h * 3, n_classes if n_classes > 2 else 1)
         self.dropout = nn.Dropout(dropout)
-        
+
     def forward(self, x, edge_index, pyg_batch, edge_attr=None):
         # Node embeddings
         # _, edge_scores_1 = self.att_1(x, edge_index, return_attention_weights=True)
@@ -441,6 +441,7 @@ class GINCustom(torch.nn.Module):
         h = self.lin2(h)
         return h.squeeze(1)
 
+
 class GINLightning(pl.LightningModule):
     def __init__(
         self,
@@ -456,14 +457,17 @@ class GINLightning(pl.LightningModule):
         assert n_classes > 1, "n_classes must be greater than 1"
         self.classification_mode = "multiclass" if n_classes > 2 else "binary"
         self.model = GINCustom(
-            in_features=in_features, dim_h=hidden_dim, n_classes=n_classes, dropout=dropout
+            in_features=in_features,
+            dim_h=hidden_dim,
+            n_classes=n_classes,
+            dropout=dropout,
         )
-        
+
         self.n_classes = n_classes
         self.fft_mode = fft_mode
         self.lr = lr
         self.weight_decay = weight_decay
-        
+
         if self.classification_mode == "multiclass":
             self.loss = nn.CrossEntropyLoss()
             self.recall = Recall(
@@ -484,7 +488,7 @@ class GINLightning(pl.LightningModule):
         self.validation_step_gt = []
         self.test_step_outputs = []
         self.test_step_gt = []
-        
+
     def unpack_data_batch(self, data_batch):
         x = data_batch.x.float()
         edge_index = data_batch.edge_index
@@ -493,20 +497,20 @@ class GINLightning(pl.LightningModule):
             if self.classification_mode == "multiclass"
             else data_batch.y
         )
-        
+
         pyg_batch = data_batch.batch
         edge_attr = data_batch.edge_attr.float()
         return x, edge_index, y, pyg_batch, edge_attr
-        
+
     def forward(self, x, edge_index, pyg_batch, edge_attr=None):
         if self.fft_mode:
             x = torch.square(torch.abs(x)).float()
-        
-        return self.model(x, edge_index,pyg_batch) ## Edge attr not used!!!
-    
+
+        return self.model(x, edge_index, pyg_batch)  ## Edge attr not used!!!
+
     def training_step(self, batch, batch_idx):
         x, edge_index, y, pyg_batch, edge_attr = self.unpack_data_batch(batch)
-        y_hat = self.forward(x, edge_index, pyg_batch,edge_attr)
+        y_hat = self.forward(x, edge_index, pyg_batch, edge_attr)
         loss = self.loss(y_hat, y)
 
         self.training_step_outputs.append(y_hat)
@@ -547,7 +551,7 @@ class GINLightning(pl.LightningModule):
         x, edge_index, y, pyg_batch, edge_attr = self.unpack_data_batch(batch)
         y_hat = self.forward(x, edge_index, pyg_batch, edge_attr)
         loss = self.loss(y_hat, y)
-        
+
         self.validation_step_outputs.append(y_hat)
         self.validation_step_gt.append(y)
         batch_size = pyg_batch.max() + 1
@@ -633,5 +637,3 @@ class GINLightning(pl.LightningModule):
             self.parameters(), lr=self.lr, weight_decay=self.weight_decay
         )
         return optimizer
-    
-            
