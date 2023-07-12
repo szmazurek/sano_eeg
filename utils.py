@@ -10,6 +10,7 @@ from sklearn.decomposition import PCA
 from mne_features.bivariate import compute_phase_lock_val, compute_spect_corr
 from typing import Union
 
+
 # from mne_icalabel import label_components
 # from pyprep.prep_pipeline import PrepPipeline
 from mne.preprocessing import ICA
@@ -348,6 +349,7 @@ def extract_training_data_and_labels_interictal(
     final_array = prepare_timestep_array(
         interictal_period, timestep * fs, overlap * fs
     )
+
     labels = np.full([final_array.shape[0]], label_value)
 
     return final_array, labels
@@ -363,6 +365,7 @@ def extract_training_data_and_labels(
     preictal_overlap: int = 9,  # in seconds
     ictal_overlap: int = 9,  # in seconds
     buffer_time: int = 5,  # in seconds
+
 ):
     """Function to extract seizure periods and preictal perdiods into samples ready to be put into graph neural network."""
     for n, start_ev in enumerate(start_ev_array):
@@ -394,6 +397,7 @@ def extract_training_data_and_labels(
             .swapaxes(0, 1)
         )  # reshape for preprocessing
 
+
         preictal_features = prepare_timestep_array(
             array=preictal_period,
             timestep=sample_timestep * fs,
@@ -409,6 +413,7 @@ def extract_training_data_and_labels(
         seizure_period = input_array[
             :, (start_ev) * fs : (stop_ev_array[n]) * fs
         ]
+
         seizure_period = (
             np.expand_dims(seizure_period.transpose(), axis=2)
             .swapaxes(0, 2)
@@ -432,6 +437,7 @@ def extract_training_data_and_labels(
                 len(preictal_features.shape) == 4
             ):  # and preictal_features.shape[0] == int(seizure_lookback/sample_timestep):
                 #  print(f"Adding correct preictal features to the dataset.", preictal_features.shape)
+
                 full_preictal_features = np.concatenate(
                     (full_preictal_features, preictal_features)
                 )
@@ -443,6 +449,7 @@ def extract_training_data_and_labels(
                         full_preictal_event_time_labels,
                         preictal_event_time_labels,
                     )
+
                 )
             if len(seizure_features.shape) == 4:
                 full_seizure_features = np.concatenate(
@@ -460,6 +467,7 @@ def extract_training_data_and_labels(
                 len(preictal_features.shape) == 4
             ):  # and preictal_features.shape[0] == int(seizure_lookback/sample_timestep):
                 # print(f"Adding correct preictal features to the dataset.", preictal_features.shape)
+
                 full_preictal_features = preictal_features
                 full_preictal_event_labels = preictal_event_labels
                 full_preictal_event_time_labels = preictal_event_time_labels
@@ -491,6 +499,7 @@ def extract_training_data_and_labels(
         #     recording_timestep_array = full_preictal_event_time_labels
         # else:
         #     print("No valuable pairs of preictal and seizure periods found.")
+
         return (None, None, None)
 
     return (
@@ -607,6 +616,7 @@ def save_timeseries_array(ds_path, target_path):
 
 
 def plv_connectivity_old(sensors, data):
+
     """
     ORGINALLY USED, DEPRECATED IN FAVOUR OF NEW FUNCTION
     Parameters
@@ -639,6 +649,7 @@ def plv_connectivity_old(sensors, data):
             connectivity_matrix[i, k] = (
                 np.abs(np.sum(np.exp(1j * (phase[i, :] - phase[k, :]))))
                 / data_points
+
             )
 
     # Computing connectivity vector
@@ -747,6 +758,7 @@ def compute_spect_corr_matrix(
     return spectral_correlation_matrix
 
 
+
 class EarlyStopping:
     """Credit to https://github.com/Bjarten/early-stopping-pytorch"""
 
@@ -759,6 +771,7 @@ class EarlyStopping:
         delta=0,
         path="checkpoint.pt",
         trace_func=print,
+
     ):
         """
         Args:

@@ -20,6 +20,7 @@ class ClassicGCN(torch.nn.Module):
         self.recurrent_1 = GCNConv(
             in_features, 32, add_self_loops=True, improved=False
         )
+
         self.recurrent_2 = GCNConv(32, 64, add_self_loops=True, improved=False)
         self.recurrent_3 = GCNConv(64, 128, add_self_loops=True, improved=False)
         self.fc1 = nn.Linear(128, 64)
@@ -209,8 +210,9 @@ class GATv2Lightning(pl.LightningModule):
     def unpack_data_batch(self, data_batch):
         x = data_batch.x
         if self.fft_mode:
-            x = torch.square(torch.abs(x)).float()
+            x = torch.square(torch.abs(x))
         x = x.float()
+
         edge_index = data_batch.edge_index
         y = (
             data_batch.y.long()
@@ -222,6 +224,7 @@ class GATv2Lightning(pl.LightningModule):
             edge_attr = data_batch.edge_attr.float()
         except AttributeError:
             edge_attr = None
+
         return x, edge_index, y, pyg_batch, edge_attr
 
     def training_step(self, batch, batch_idx):
@@ -249,11 +252,13 @@ class GATv2Lightning(pl.LightningModule):
         rec = self.recall(training_step_outputs, training_step_gt)
         spec = self.specificity(training_step_outputs, training_step_gt)
         auroc = self.auroc(training_step_outputs, training_step_gt)
+
+
         self.log_dict(
             {
-                "train_recall": rec,
+                "train_sensitivity": rec,
                 "train_specificity": spec,
-                "train_auroc": auroc,
+                "train_AUROC": auroc,
             },
             logger=True,
             prog_bar=True,
@@ -265,10 +270,8 @@ class GATv2Lightning(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         x, edge_index, y, pyg_batch, edge_attr = self.unpack_data_batch(batch)
-
         y_hat = self.forward(x, edge_index, pyg_batch, edge_attr)
         loss = self.loss(y_hat, y)
-
         self.validation_step_outputs.append(y_hat)
         self.validation_step_gt.append(y)
         batch_size = pyg_batch.max() + 1
@@ -291,9 +294,9 @@ class GATv2Lightning(pl.LightningModule):
         auroc = self.auroc(validation_step_outputs, validation_step_gt)
         self.log_dict(
             {
-                "val_recall": rec,
+                "val_sensitivity": rec,
                 "val_specificity": spec,
-                "val_auroc": auroc,
+                "val_AUROC": auroc,
             },
             logger=True,
             prog_bar=True,
@@ -329,9 +332,10 @@ class GATv2Lightning(pl.LightningModule):
         auroc = self.auroc(test_step_outputs, test_step_gt)
         self.log_dict(
             {
-                "test_recall": rec,
-                "test_specificity": spec,
-                "test_auroc": auroc,
+
+                "loso_sensitivity": rec,
+                "loso_specificity": spec,
+                "loso_AUROC": auroc,
             },
             logger=True,
             prog_bar=True,
@@ -353,9 +357,10 @@ class GATv2Lightning(pl.LightningModule):
         optimizer = torch.optim.AdamW(
             self.parameters(),
             lr=self.lr,
-            weight_decay=self.weight_decay,
+            weight_decay=self.weight_decay
         )
         return optimizer
+
 
 
 class GINCustom(torch.nn.Module):
@@ -398,6 +403,7 @@ class GINCustom(torch.nn.Module):
             negative_slope=0.01,
             dropout=dropout,
             improved=True,
+
         )
         self.att_2 = GATv2Conv(
             dim_h,
@@ -432,6 +438,7 @@ class GINCustom(torch.nn.Module):
         h1 = global_add_pool(h1, pyg_batch)
         h2 = global_add_pool(h2, pyg_batch)
         h3 = global_add_pool(h3, pyg_batch)
+
         # Concatenate graph embeddings
         h = torch.cat((h1, h2, h3), dim=1)
         # Classifier
@@ -637,3 +644,4 @@ class GINLightning(pl.LightningModule):
             self.parameters(), lr=self.lr, weight_decay=self.weight_decay
         )
         return optimizer
+
