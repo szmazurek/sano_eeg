@@ -7,6 +7,9 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from sklearn.decomposition import PCA
+from mne_features.bivariate import compute_phase_lock_val, compute_spect_corr
+from typing import Union
+
 
 # from mne_icalabel import label_components
 # from pyprep.prep_pipeline import PrepPipeline
@@ -102,14 +105,14 @@ def remove_repeating_pairs(cleared_ch_names):
         temp_ch_pairs.remove(pair)
         try:
             ch_1, ch_2 = pair.split(sep="-")
-        except:
+        except ValueError:
             ch_1, ch_2, ch_3 = pair.split(sep="-")
         for pair_2 in temp_ch_pairs:
             num_of_same_chs = pair_2.count(ch_1) + pair_2.count(ch_2)
             if num_of_same_chs > 1:
                 repeating_chs.append(pair_2)
 
-    return repeating_chs[0]  ## not so good function!
+    return repeating_chs[0]  # not so good function!
 
 
 def reorder_channels_chbmit(raw):
@@ -130,7 +133,7 @@ def run_preprocessing(
     freq_h=30.0,
     sfreq=256.0,
     powerline_freq=50.0,
-    avg_ref=False,  ##Caution ! this needs to be paid attention to!
+    avg_ref=False,  # Caution ! this needs to be paid attention to!
     apply_pca=True,
     apply_ica=False,
     informax=False,
@@ -162,7 +165,9 @@ def run_preprocessing(
         ica.fit(raw)
         ic_labels = label_components(raw, ica, method="iclabel")
         labels = np.array(ic_labels["labels"])
-        ica.exclude = np.where((labels != "other") & (labels != "brain"))[0].tolist()
+        ica.exclude = np.where((labels != "other") & (labels != "brain"))[
+            0
+        ].tolist()
         ica.apply(raw)
 
     elif apply_pca:
@@ -212,7 +217,9 @@ def load_and_dump_channels(filepath):
         channel_ordering = current_channels[:-n_chs_to_drop]
         data_raw.reorder_channels(channel_ordering)
     if len(current_channels) < 18:
-        print(f"Too few channels to processd, found {len(current_channels)}. Skipping.")
+        print(
+            f"Too few channels to processd, found {len(current_channels)}. Skipping."
+        )
         return None
     return data_raw
 
@@ -231,7 +238,8 @@ def preprocess_dataset_seizures(
 
     """
     subjects_with_seizures = [
-        subject[:-1] for subject in open(subjects_with_seizures_path, "r").readlines()
+        subject[:-1]
+        for subject in open(subjects_with_seizures_path, "r").readlines()
     ]
     for subject in subjects_with_seizures:
         try:
@@ -258,7 +266,8 @@ def preprocess_dataset_all(
     subjects_with_seizures_path, dataset_path, preprocessed_dirpath
 ):
     subjects_with_seizures = [
-        subject[:-1] for subject in open(subjects_with_seizures_path, "r").readlines()
+        subject[:-1]
+        for subject in open(subjects_with_seizures_path, "r").readlines()
     ]
 
     for folder in os.listdir(dataset_path):
@@ -280,7 +289,11 @@ def preprocess_dataset_all(
                 reorder_channels_chbmit(raw_file)
                 ## THIS SHOULD BE PARAMETRIZED AS KWARGS
                 raw_instance = run_preprocessing(
-                    raw_file, apply_pca=True, avg_ref=True, freq_l=0.5, freq_h=30.0
+                    raw_file,
+                    apply_pca=True,
+                    avg_ref=True,
+                    freq_l=0.5,
+                    freq_h=30.0,
                 )
                 if os.path.join(folder, file) in subjects_with_seizures:
                     save_path = os.path.join(
@@ -330,9 +343,13 @@ def extract_training_data_and_labels_interictal(
     interictal_period = input_array[
         :,
         :,
-        random_start_time : random_start_time + samples_per_recording * fs * timestep,
+        random_start_time : random_start_time
+        + samples_per_recording * fs * timestep,
     ]
-    final_array = prepare_timestep_array(interictal_period, timestep * fs, overlap * fs)
+    final_array = prepare_timestep_array(
+        interictal_period, timestep * fs, overlap * fs
+    )
+
     labels = np.full([final_array.shape[0]], label_value)
 
     return final_array, labels
@@ -343,11 +360,12 @@ def extract_training_data_and_labels(
     start_ev_array,
     stop_ev_array,
     fs: int = 256,
-    seizure_lookback: int = 600,  ## in seconds
-    sample_timestep: int = 10,  ## in seconds
-    preictal_overlap: int = 9,  ## in seconds
-    ictal_overlap: int = 9,  ## in seconds
-    buffer_time: int = 5,  ## in seconds
+    seizure_lookback: int = 600,  # in seconds
+    sample_timestep: int = 10,  # in seconds
+    preictal_overlap: int = 9,  # in seconds
+    ictal_overlap: int = 9,  # in seconds
+    buffer_time: int = 5,  # in seconds
+
 ):
     """Function to extract seizure periods and preictal perdiods into samples ready to be put into graph neural network."""
     for n, start_ev in enumerate(start_ev_array):
@@ -357,7 +375,7 @@ def extract_training_data_and_labels(
 
         if (
             prev_event_time > seizure_lookback + buffer_time
-        ):  ## take into account buffer time after the previous seizure and before current one
+        ):  # take into account buffer time after the previous seizure and before current one
             preictal_period = input_array[
                 :,
                 (start_ev - seizure_lookback - buffer_time)
@@ -377,7 +395,8 @@ def extract_training_data_and_labels(
             np.expand_dims(preictal_period.transpose(), axis=2)
             .swapaxes(0, 2)
             .swapaxes(0, 1)
-        )  ##reshape for preprocessing
+        )  # reshape for preprocessing
+
 
         preictal_features = prepare_timestep_array(
             array=preictal_period,
@@ -391,7 +410,10 @@ def extract_training_data_and_labels(
         preictal_event_time_labels = prepare_timestep_label(
             preictal_period, sample_timestep * fs, preictal_overlap * fs
         )  ## assign time to seizure for every sample [s]
-        seizure_period = input_array[:, (start_ev) * fs : (stop_ev_array[n]) * fs]
+        seizure_period = input_array[
+            :, (start_ev) * fs : (stop_ev_array[n]) * fs
+        ]
+
         seizure_period = (
             np.expand_dims(seizure_period.transpose(), axis=2)
             .swapaxes(0, 2)
@@ -407,9 +429,15 @@ def extract_training_data_and_labels(
         seizure_event_labels = np.ones(seizure_features.shape[0])
 
         seizure_event_time_labels = np.full(seizure_features.shape[0], 0)
+        # if len(preictal_features.shape) != 4 or len(seizure_features.shape) != 4:
+        #     continue
 
         try:
-            if len(preictal_features.shape) == 4:
+            if (
+                len(preictal_features.shape) == 4
+            ):  # and preictal_features.shape[0] == int(seizure_lookback/sample_timestep):
+                #  print(f"Adding correct preictal features to the dataset.", preictal_features.shape)
+
                 full_preictal_features = np.concatenate(
                     (full_preictal_features, preictal_features)
                 )
@@ -417,7 +445,11 @@ def extract_training_data_and_labels(
                     (full_preictal_event_labels, preictal_event_labels)
                 )
                 full_preictal_event_time_labels = np.concatenate(
-                    (full_preictal_event_time_labels, preictal_event_time_labels)
+                    (
+                        full_preictal_event_time_labels,
+                        preictal_event_time_labels,
+                    )
+
                 )
             if len(seizure_features.shape) == 4:
                 full_seizure_features = np.concatenate(
@@ -430,8 +462,12 @@ def extract_training_data_and_labels(
                 full_seizure_event_time_labels = np.concatenate(
                     (full_seizure_event_time_labels, seizure_event_time_labels)
                 )
-        except:
-            if len(preictal_features.shape) == 4:
+        except NameError:
+            if (
+                len(preictal_features.shape) == 4
+            ):  # and preictal_features.shape[0] == int(seizure_lookback/sample_timestep):
+                # print(f"Adding correct preictal features to the dataset.", preictal_features.shape)
+
                 full_preictal_features = preictal_features
                 full_preictal_event_labels = preictal_event_labels
                 full_preictal_event_time_labels = preictal_event_time_labels
@@ -449,9 +485,21 @@ def extract_training_data_and_labels(
         ).astype(np.int32)
 
         recording_timestep_array = np.concatenate(
-            (full_preictal_event_time_labels, full_seizure_event_time_labels), axis=0
+            (full_preictal_event_time_labels, full_seizure_event_time_labels),
+            axis=0,
         )
-    except:
+    except UnboundLocalError:
+        # if 'full_seizure_features' in locals().keys():
+        #     recording_features_array = full_seizure_features
+        #     recording_labels_array = full_seizure_event_labels.astype(np.int32)
+        #     recording_timestep_array = full_seizure_event_time_labels
+        # elif 'full_preictal_features' in locals().keys():
+        #     recording_features_array = full_preictal_features
+        #     recording_labels_array = full_preictal_event_labels.astype(np.int32)
+        #     recording_timestep_array = full_preictal_event_time_labels
+        # else:
+        #     print("No valuable pairs of preictal and seizure periods found.")
+
         return (None, None, None)
 
     return (
@@ -489,7 +537,9 @@ def get_patient_annotations(path_to_file: Path, savedir: Path):
         if "Number of Seizures in File" in line:
             num_of_seizures = int(line[-2:])
             if num_of_seizures > 0:
-                events_in_recording = raw_txt_lines[n + 1 : n + num_of_seizures * 2 + 1]
+                events_in_recording = raw_txt_lines[
+                    n + 1 : n + num_of_seizures * 2 + 1
+                ]
                 for event in events_in_recording:
                     if "Start Time" in event:
                         sub_ev = event.split(": ")[1]
@@ -498,7 +548,9 @@ def get_patient_annotations(path_to_file: Path, savedir: Path):
                         if not current_file_name in event_dict_start.keys():
                             event_dict_start[current_file_name] = [time_value]
                         else:
-                            event_dict_start[current_file_name].append(time_value)
+                            event_dict_start[current_file_name].append(
+                                time_value
+                            )
                     elif "End Time" in event:
                         sub_ev = event.split(": ")[1]
 
@@ -508,7 +560,9 @@ def get_patient_annotations(path_to_file: Path, savedir: Path):
                             event_dict_stop[current_file_name] = [time_value]
 
                         else:
-                            event_dict_stop[current_file_name].append(time_value)
+                            event_dict_stop[current_file_name].append(
+                                time_value
+                            )
     df = pd.DataFrame.from_dict(event_dict_start, orient="index")
     col_list = []
     for n in range(1, len(df.columns) + 1):
@@ -516,7 +570,9 @@ def get_patient_annotations(path_to_file: Path, savedir: Path):
     df_start = pd.DataFrame.from_dict(
         event_dict_start, orient="index", columns=col_list
     )
-    df_end = pd.DataFrame.from_dict(event_dict_stop, orient="index", columns=col_list)
+    df_end = pd.DataFrame.from_dict(
+        event_dict_stop, orient="index", columns=col_list
+    )
     patient_id = current_file_name.split("_")[0]
     if not os.path.exists(savedir):
         os.mkdir(savedir)
@@ -534,7 +590,9 @@ def get_annotation_files(dataset_path, dst_path):
             patient_files = os.listdir(patient_folder_path)
             for filename in patient_files:
                 if "summary" in filename:
-                    annotation_path = os.path.join(patient_folder_path, filename)
+                    annotation_path = os.path.join(
+                        patient_folder_path, filename
+                    )
                     get_patient_annotations(Path(annotation_path), dst_path)
 
 
@@ -545,7 +603,9 @@ def save_timeseries_array(ds_path, target_path):
         patient_files = os.listdir(patient_folder_path)
         for file in patient_files:
             filepath = os.path.join(patient_folder_path, file)
-            data_raw = mne.io.read_raw_edf(filepath, preload=False, verbose=False)
+            data_raw = mne.io.read_raw_edf(
+                filepath, preload=False, verbose=False
+            )
             array_data = data_raw.get_data()
             dst_folder = os.path.join(target_path, folder)
             if not os.path.exists(dst_folder):
@@ -555,8 +615,10 @@ def save_timeseries_array(ds_path, target_path):
             np.save(dst_folder, array_data)
 
 
-def plv_connectivity(sensors, data):
+def plv_connectivity_old(sensors, data):
+
     """
+    ORGINALLY USED, DEPRECATED IN FAVOUR OF NEW FUNCTION
     Parameters
     ----------
     sensors : INT
@@ -585,7 +647,9 @@ def plv_connectivity(sensors, data):
     for i in range(sensors):
         for k in range(sensors):
             connectivity_matrix[i, k] = (
-                np.abs(np.sum(np.exp(1j * (phase[i, :] - phase[k, :])))) / data_points
+                np.abs(np.sum(np.exp(1j * (phase[i, :] - phase[k, :]))))
+                / data_points
+
             )
 
     # Computing connectivity vector
@@ -614,7 +678,85 @@ def create_recordings_plv(npy_dataset_path, dst_path):
             plv_array = plv_connectivity(data_array.shape[0], data_array)
             target_filename = os.path.join(save_folder, record)
             np.save(target_filename, plv_array)
-            print("The time of calculation is :", timeit.default_timer() - starttime)
+            print(
+                "The time of calculation is :",
+                timeit.default_timer() - starttime,
+            )
+
+
+def compute_plv_matrix(graph: np.ndarray, sfreq=None) -> np.ndarray:
+    """Compute connectivity matrix via usage of PLV from MNE implementation.
+    Args:
+        graph: (np.ndarray) Single graph with shape [nodes,features] where features represent consecutive time samples and nodes represent
+    electrodes in EEG.
+        sfreq : (int) Sampling frequency of the EEG recording NOT USED - ONLY FOR COMPATIBILITY WITH OTHER FUNCTIONS IN THE LOADER
+    Returns:
+        plv_matrix: (np.ndarray) PLV matrix of the input graph.
+    """
+    plv_conn_vector = compute_phase_lock_val(graph)
+
+    n = int(np.sqrt(2 * len(plv_conn_vector))) + 1
+
+    # Reshape the flattened array into a square matrix
+    upper_triangular = np.zeros((n, n))
+    upper_triangular[np.triu_indices(n, k=1)] = plv_conn_vector
+
+    # Create an empty matrix for the complete symmetric matrix
+    symmetric_matrix = np.zeros((n, n))
+
+    # Fill the upper triangular part (including the diagonal)
+    symmetric_matrix[np.triu_indices(n)] = upper_triangular[np.triu_indices(n)]
+
+    # Fill the lower triangular part by mirroring the upper triangular
+    plv_matrix = (
+        symmetric_matrix
+        + symmetric_matrix.T
+        - np.diag(np.diag(symmetric_matrix))
+    )
+
+    # Add 1 to the diagonal elements
+    np.fill_diagonal(plv_matrix, 1)
+    return plv_matrix
+
+
+def compute_spect_corr_matrix(
+    graph: np.ndarray, sfreq: Union[int, float]
+) -> np.ndarray:
+    """Compute connectivity matrix via usage of spectral correlation from MNE implementation.
+    Args:
+        graph: (np.ndarray) Single graph with shape [nodes,features] where features represent consecutive time samples and nodes represent
+    electrodes in EEG.
+        sfreq: (int) Sampling frequency of the EEG recording.
+    Returns:
+        spectral_correlation_matrix: (np.ndarray) Spectral correlation matrix of the input graph.
+
+    """
+    spectral_corr_vector = compute_spect_corr(
+        sfreq, graph, with_eigenvalues=False
+    )
+    n = int(np.sqrt(2 * len(spectral_corr_vector))) + 1
+
+    # Reshape the flattened array into a square matrix
+    upper_triangular = np.zeros((n, n))
+    upper_triangular[np.triu_indices(n, k=1)] = spectral_corr_vector
+
+    # Create an empty matrix for the complete symmetric matrix
+    symmetric_matrix = np.zeros((n, n))
+
+    # Fill the upper triangular part (including the diagonal)
+    symmetric_matrix[np.triu_indices(n)] = upper_triangular[np.triu_indices(n)]
+
+    # Fill the lower triangular part by mirroring the upper triangular
+    spectral_correlation_matrix = (
+        symmetric_matrix
+        + symmetric_matrix.T
+        - np.diag(np.diag(symmetric_matrix))
+    )
+
+    # Add 1 to the diagonal elements
+    np.fill_diagonal(spectral_correlation_matrix, 1)
+    return spectral_correlation_matrix
+
 
 
 class EarlyStopping:
@@ -623,7 +765,13 @@ class EarlyStopping:
     """Early stops the training if validation loss doesn't improve after a given patience."""
 
     def __init__(
-        self, patience=7, verbose=False, delta=0, path="checkpoint.pt", trace_func=print
+        self,
+        patience=7,
+        verbose=False,
+        delta=0,
+        path="checkpoint.pt",
+        trace_func=print,
+
     ):
         """
         Args:
