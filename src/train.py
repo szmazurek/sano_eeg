@@ -10,14 +10,14 @@ from sklearn.model_selection import StratifiedShuffleSplit
 from torch_geometric.loader import DataLoader
 
 import wandb
-from dataloader_utils import HDFDataset_Writer, HDFDatasetLoader
+from utils.dataloader_utils import HDFDataset_Writer, HDFDatasetLoader
 from models import GATv2Lightning
 
 warnings.filterwarnings(
     "ignore", ".*does not have many workers.*"
 )  # DISABLED ON PURPOSE
 torch_geometric.seed_everything(42)
-api_key_file = open("wandb_api_key.txt", "r")
+api_key_file = open("/net/tscratch/people/plgmazurekagh/sano_eeg/wandb_api_key.txt", "r")
 API_KEY = api_key_file.read()
 api_key_file.close()
 os.environ["WANDB_API_KEY"] = API_KEY
@@ -42,17 +42,17 @@ parser.add_argument("--mne_features", action="store_true", default=False)
 parser.add_argument("--normalizing_period", type=str, default="interictal")
 parser.add_argument("--connectivity_metric", type=str, default="plv")
 parser.add_argument("--epochs", type=int, default=25)
-parser.add_argument("--batch_size", type=int, default=32)
+parser.add_argument("--batch_size", type=int, default=256)
 parser.add_argument("--cache_dir", type=str, default="data/cache")
 parser.add_argument("--exp_name", type=str, default="eeg_exp")
 parser.add_argument("--npy_data_dir", type=str, default="data/npy_data")
 parser.add_argument("--event_tables_dir", type=str, default="data/event_tables")
-parser.add_argument("--use_ictal_periods", action="store_false", default=True)
+parser.add_argument("--use_ictal_periods", action="store_true", default=False)
 parser.add_argument(
-    "--use_preictal_periods", action="store_false", default=True
+    "--use_preictal_periods", action="store_true", default=False
 )
 parser.add_argument(
-    "--use_interictal_periods", action="store_false", default=True
+    "--use_interictal_periods", action="store_true", default=False
 )
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--kfold_cval_mode", action="store_true", default=False)
@@ -76,6 +76,7 @@ USED_CLASSES_DICT = {
     "interictal": args.use_interictal_periods,
     "preictal": args.use_preictal_periods,
 }
+print(USED_CLASSES_DICT)
 SFREQ = args.sampling_freq
 DOWNSAMPLING_F = args.downsampling_freq
 TRAIN_VAL_SPLIT = args.train_test_split
@@ -184,7 +185,7 @@ def loso_training():
             max_epochs=EPOCHS,
             enable_progress_bar=True,
             strategy=strategy,
-            deterministic=True,
+            deterministic=False,
             log_every_n_steps=1,
             enable_model_summary=False,
             logger=wandb_logger,
@@ -202,6 +203,7 @@ def loso_training():
         trainer.fit(model, train_dataloader, valid_dataloader)
         trainer.test(model, loso_dataloader, ckpt_path="best")
         wandb.finish()
+        return None
 
 
 def kfold_cval():
@@ -304,7 +306,7 @@ def kfold_cval():
             max_epochs=EPOCHS,
             enable_progress_bar=True,
             strategy=strategy,
-            deterministic=True,
+            deterministic=False,
             log_every_n_steps=1,
             enable_model_summary=False,
             logger=wandb_logger,

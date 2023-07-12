@@ -1,4 +1,3 @@
-import utils
 import fnmatch
 import logging
 import multiprocessing as mp
@@ -7,28 +6,26 @@ import time
 import traceback
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Union, List, Tuple
+from typing import List, Tuple, Union
+
 import h5py
 import networkx as nx
 import numpy as np
 import pandas as pd
 import torch
 import torch_geometric
-
 import yaml
 from imblearn.over_sampling import SMOTE
-from mne_features.univariate import (
-    compute_energy_freq_bands,
-    compute_higuchi_fd,
-    compute_hjorth_complexity,
-    compute_hjorth_mobility,
-    compute_katz_fd,
-    compute_line_length,
-    compute_variance,
-)
+from mne_features.univariate import (compute_energy_freq_bands,
+                                     compute_higuchi_fd,
+                                     compute_hjorth_complexity,
+                                     compute_hjorth_mobility, compute_katz_fd,
+                                     compute_line_length, compute_variance)
 from scipy.signal import resample
 from sklearn.model_selection import train_test_split
 from torch_geometric.data import Data
+
+import utils.utils as utils
 
 
 @dataclass
@@ -528,8 +525,10 @@ class HDFDataset_Writer:
         return features_patient.shape[0]
 
     def _multiprocess_seizure_period_data_loading(self):
-        num_processes = mp.cpu_count()
+        num_processes = 24  # mp.cpu_count()
         pool = mp.Pool(processes=num_processes)
+        self.logger.info(num_processes)
+
         result = pool.map(
             self._get_labels_features_edge_weights_seizure, self.patient_list
         )
@@ -541,8 +540,10 @@ class HDFDataset_Writer:
             self.sample_count += sample_count
 
     def _multiprocess_interictal_data_loading(self):
-        num_processes = mp.cpu_count()
+        num_processes = 24  # mp.cpu_count()
+        self.logger.info(num_processes)
         pool = mp.Pool(processes=num_processes)
+        
         result = pool.map(
             self._get_labels_features_edge_weights_interictal, self.patient_list
         )
