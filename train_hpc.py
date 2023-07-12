@@ -386,7 +386,7 @@ class SeizureDataLoader:
             )
             del self._loso_patient_number_dict
 
-    def _balance_classes(self):
+    def _balance_classes(self) -> None:
         """Method to balance classes in the dataset by removing samples from the majority class.
         Currently works only for interictal and ictal classes."""
         negative_label = self._label_counts[0]
@@ -411,7 +411,7 @@ class SeizureDataLoader:
             self._patient_number, obj=indices_to_discard, axis=0
         )
 
-    def _standardize_data(self, features, labels, loso_features=None):
+    def _standardize_data(self, features, labels, loso_features=None) -> None:
         """Standardize features by subtracting mean and dividing by standard deviation.
         The mean and std are computed from the interictal class. The same values are used for loso_features.
         Args:
@@ -435,7 +435,7 @@ class SeizureDataLoader:
                         loso_features[i, n, :] - channel_mean
                     ) / channel_std
 
-    def _min_max_scale(self, features, labels, loso_features=None):
+    def _min_max_scale(self, features, labels, loso_features=None) -> None:
         """Min max scale features to range [0,1]. The min and max values are computed from the interictal class.
         Args:
             features: (np.ndarray) Array with features.
@@ -1041,6 +1041,8 @@ class SeizureDataLoader:
             return (*loaders, loso_dataloader)
 
         return (*loaders,)
+
+
 ## this model has to be there - for some reasons it will crash with WandbLogger if the model is in different file
 ## probably some bug in pytorch lightning, could not get around it
 
@@ -1057,6 +1059,9 @@ parser.add_argument("--hjorth", action="store_true", default=False)
 parser.add_argument("--exp_name", type=str, default="eeg_exp")
 parser.add_argument("--data_dir", type=str, default="data/npy_data")
 parser.add_argument("--epochs", type=int, default=25)
+parser.add_argument("--use_ictal_periods", action="store_true", default=False)
+parser.add_argument("--use_preictal_periods", action="store_true", default=False)
+parser.add_argument("--use_interictal_periods", action="store_true", default=False)
 args = parser.parse_args()
 TIMESTEP = args.timestep
 PREICTAL_OVERLAP = args.preictal_overlap
@@ -1070,14 +1075,20 @@ EXP_NAME = args.exp_name
 EPOCHS = args.epochs
 FFT = args.fft
 HJORTH = args.hjorth
+USED_CLASSES_DICT = {
+    "ictal": args.use_ictal_periods,
+    "interictal": args.use_interictal_periods,
+    "preictal": args.use_preictal_periods,
+}
 SFREQ = 256
 DOWNSAMPLING_F = 60
 TRAIN_TEST_SPLIT = 0.10
 SEIZURE_LOOKBACK = 600
 BATCH_SIZE = 256
- 
+
 print("Timestep: ", TIMESTEP)
 print("Interictal overlap: ", INTER_OVERLAP)
+print("Preictal overlap: ", PREICTAL_OVERLAP)
 print("Ictal overlap: ", ICTAL_OVERLAP)
 print("Smote: ", SMOTE_FLAG)
 print("Weights: ", WEIGHTS_FLAG)
@@ -1085,8 +1096,9 @@ print("Undersample: ", UNDERSAMPLE)
 print("Epochs: ", EPOCHS)
 print("FFT: ", FFT)
 print("Hjorth: ", HJORTH)
+print("Used classes: ", USED_CLASSES_DICT)
 device = torch.device("cuda:0")
-for loso_patient in os.listdir(DS_PATH):
+for loso_patient in os.listdir(DS_PATH)[18:]:
     torch_geometric.seed_everything(42)
     torch.manual_seed(42)
     dataloader = SeizureDataLoader(
@@ -1110,7 +1122,7 @@ for loso_patient in os.listdir(DS_PATH):
         smote=SMOTE_FLAG,
         tsfresh=False,  ##hardcoded, too slow to work now
         rescale=False,  ## hardcoded, too no sense to use now
-        used_classes_dict={"ictal": True, "interictal": False, "preictal": True},
+        used_classes_dict=USED_CLASSES_DICT,
     )
 
     train_loader, valid_loader, loso_loader = dataloader.get_dataset()
@@ -1123,6 +1135,7 @@ for loso_patient in os.listdir(DS_PATH):
     CONFIG = dict(
         timestep=TIMESTEP,
         inter_overlap=INTER_OVERLAP,
+        preictal_overlap=PREICTAL_OVERLAP,
         ictal_overlap=ICTAL_OVERLAP,
         downsampling_f=DOWNSAMPLING_F,
         train_test_split=TRAIN_TEST_SPLIT,
@@ -1163,8 +1176,9 @@ for loso_patient in os.listdir(DS_PATH):
         logger=wandb_logger,
         callbacks=callbacks,
     )
-
-    model = GATv2Lightning(6, n_classes=2)
+    #in_features = int((TIMESTEP * DOWNSAMPLING_F) / 2) + 1
+    in_features = dataloader._features[0].shape[1]
+    model = GATv2Lightning(in_features, n_classes=2, fft_mode=FFT)
     trainer.fit(model, train_loader, valid_loader)
     trainer.test(model, dataloaders=loso_loader)
     wandb.finish()
