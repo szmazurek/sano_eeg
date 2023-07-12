@@ -203,7 +203,7 @@ def loso_training():
         trainer.fit(model, train_dataloader, valid_dataloader)
         trainer.test(model, loso_dataloader, ckpt_path="best")
         wandb.finish()
-        return None
+     
 
 
 def kfold_cval():
