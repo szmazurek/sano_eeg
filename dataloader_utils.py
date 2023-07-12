@@ -7,7 +7,7 @@ import time
 import traceback
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional, Union, List
 import h5py
 import networkx as nx
 import numpy as np
@@ -64,7 +64,7 @@ class HDFDataset_Writer:
         cache_folder: (str) Path to the folder to store the dataset. Default: 'cache'.
     """
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self._initialize_logger()
         assert self.connectivity_metric in [
             "plv",
@@ -97,6 +97,7 @@ class HDFDataset_Writer:
         assert (
             self.ictal_overlap < self.sample_timestep
         ), "Ictal overlap must be smaller than sample timestep"
+        return
 
     def _initialize_logger(self):
         """Initializing logger."""
@@ -755,7 +756,7 @@ class HDFDatasetLoader:
         self.data_mean = np.mean(features_all[idx])
         self.data_std = np.std(features_all[idx])
         self.logger.info(
-            f"Mean and standard deviation calculated for interictal samples."
+            "Mean and standard deviation calculated for interictal samples."
         )
 
     def _normalize_data(self, features: np.ndarray):
@@ -844,7 +845,7 @@ class HDFDatasetLoader:
         Returns:
             new_features: (np.ndarray) Array with Hjorth features.
         """
-        FREQ_BANDS = [0.5, 4, 8, 13, 29]  ## hardcoded for now
+        FREQ_BANDS = [0.5, 4, 8, 13, 29]  # hardcoded for now
         band_count = len(FREQ_BANDS) - 1
 
         new_features = np.array(
@@ -1024,13 +1025,13 @@ class HDFDatasetLoader:
         self.logger.info(f"Processed patient {patient} set.")
         return data_list
 
-    def get_data(self):
+    def get_data(self) -> list[list[Data]]:
         """Get data for training, validation and leave-one-subject-out cross-validation.
         Returns:
             data_lists: (list) List of lists of torch_geometric.data.Data objects loaded.
         """
         start = time.time()
-        train_data_list = []
+        train_data_list: List[Data] = []
         if self.train_val_split_ratio > 0:
             val_data_list = []
         num_processes = mp.cpu_count()
