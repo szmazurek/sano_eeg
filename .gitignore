@@ -14,3 +14,4 @@ wandb_api_key.txt
 *log
 .vscode
 *cache*
+wandb/
