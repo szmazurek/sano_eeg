@@ -1,19 +1,18 @@
 """Script to convert data to hdf5 format to reduce storage and amount of I/O operations."""
 
-import numpy as np
-import h5py
-import os
-import argparse
-import multiprocessing as mp
-from typing import List, Tuple, Dict, Union, Any, Optional
-import dataclasses
-import pandas as pd
 import logging
+import multiprocessing as mp
+import os
 from argparse import ArgumentParser
 from datetime import datetime
+from typing import Dict, List, Tuple
+
+import h5py
+import numpy as np
+import pandas as pd
 
 
-def get_recording_events(events_dict, recording: str) -> list[int]:
+def get_recording_events(events_dict: Dict, recording: str) -> List[int]:
     """Read seizure times into list from event_dict.
     Args:
         events_dict: (dict) Dictionary with events for given patient.
@@ -33,7 +32,7 @@ def get_recording_events(events_dict, recording: str) -> list[int]:
 
 def get_event_tables(
     patient_name: str, event_tables_path: str
-) -> tuple[dict, dict]:
+) -> Tuple[Dict, Dict]:
     """Read events for given patient into start and stop times lists
     from .csv extracted files.
     Args:
