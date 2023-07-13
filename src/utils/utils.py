@@ -341,14 +341,13 @@ def extract_training_data_and_labels_interictal(
     total_samples = input_array.shape[2]
 
     if overlap == 0:
-        min_samples = (
-            samples_per_recording * fs * timestep
-            - (total_samples % timestep * fs)
-        ) / (timestep * fs)
+        min_samples = samples_per_recording * fs * timestep
+
     else:
         min_samples = samples_per_recording * (timestep - overlap) + overlap
+        min_samples = min_samples * fs
     logging.info(f"Min needed samples: {min_samples}")
-    min_samples = min_samples * fs
+
     logging.info(f"Min needed samples: {min_samples}")
     logging.info(f"Total samples: {total_samples}")
     logging.info(
