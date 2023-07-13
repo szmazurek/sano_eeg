@@ -21,6 +21,7 @@ api_key_file = open(
     "/net/tscratch/people/plgmazurekagh/sano_eeg/wandb_api_key.txt", "r"
 )
 API_KEY = api_key_file.read()
+
 api_key_file.close()
 os.environ["WANDB_API_KEY"] = API_KEY
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"

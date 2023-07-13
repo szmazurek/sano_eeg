@@ -30,7 +30,8 @@ from sklearn.model_selection import train_test_split
 from torch_geometric.data import Data
 
 import utils.utils as utils
-import jax.numpy as jnp
+
+CPUS_PER_TASK = int(os.environ["SLURM_CPUS_PER_TASK"])
 
 
 @dataclass
@@ -557,7 +558,7 @@ class HDFDataset_Writer:
         return features_patient.shape[0]
 
     def _multiprocess_seizure_period_data_loading(self):
-        num_processes = 24  # mp.cpu_count()
+        num_processes = CPUS_PER_TASK  # mp.cpu_count()
         pool = mp.Pool(processes=num_processes)
         self.logger.info(num_processes)
 
@@ -575,7 +576,7 @@ class HDFDataset_Writer:
             self.sample_count += sample_count
 
     def _multiprocess_interictal_data_loading(self):
-        num_processes = 24  # mp.cpu_count()
+        num_processes = CPUS_PER_TASK  # mp.cpu_count()
         self.logger.info(num_processes)
         pool = mp.Pool(processes=num_processes)
 
@@ -825,7 +826,7 @@ class HDFDatasetLoader:
         """Method to determine mean and standard deviation of interictal samples. Those values are used late to normalize all data."""
 
         start_time = time.time()
-        pool = mp.Pool(processes=24)
+        pool = mp.Pool(processes=CPUS_PER_TASK)
         results = pool.map(self._load_data_for_std_mean, self.patient_list)
         pool.close()
         pool.join()
@@ -1148,7 +1149,7 @@ class HDFDatasetLoader:
         train_data_list: List[Data] = []
         if self.train_val_split_ratio > 0:
             val_data_list: List[Data] = []
-        num_processes = 24
+        num_processes = CPUS_PER_TASK
         pool = mp.Pool(processes=num_processes)
         try:
             if self.train_val_split_ratio > 0:
