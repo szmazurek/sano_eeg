@@ -611,6 +611,7 @@ class HDFDataset_Writer:
             else:
                 self._multiprocess_seizure_period_data_loading()
                 self.logger.info("Seizure period data loaded.")
+                self.logger.info(self.preictal_samples_dict)
                 self._multiprocess_interictal_data_loading()
                 self.logger.info("Interictal data loaded.")
 

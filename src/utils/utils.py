@@ -9,7 +9,7 @@ from pathlib import Path
 from sklearn.decomposition import PCA
 from mne_features.bivariate import compute_phase_lock_val, compute_spect_corr
 from typing import Union
-
+import logging
 
 # from mne_icalabel import label_components
 # from pyprep.prep_pipeline import PrepPipeline
@@ -193,18 +193,18 @@ def load_and_dump_channels(filepath):
         ch_names = data_raw.ch_names
         ch_to_remove = list(filter(remove_channels_dummy, ch_names))
         data_raw.drop_channels(ch_to_remove)
-    except:
+    except Exception:
         print("No dummy channels to remove")
     try:
         ch_names = data_raw.ch_names
         ch_to_remove = list(filter(remove_channels_duplicate, ch_names))
         data_raw.drop_channels(ch_to_remove)
-    except:
+    except Exception:
         print("No duplicate channels to remove")
     try:
         ch_names = data_raw.ch_names
         data_raw.drop_channels(remove_repeating_pairs(ch_names))
-    except:
+    except Exception:
         print("No repeating pairs to remove")
     current_channels = data_raw.ch_names
     for channel in current_channels:
@@ -248,7 +248,7 @@ def preprocess_dataset_seizures(
             raw_file = load_and_dump_channels(subject_path)
             if raw_file is None:
                 continue
-        except:
+        except Exception:
             print(f"Subject {subject} not found.")
             continue
 
@@ -284,7 +284,7 @@ def preprocess_dataset_all(
                     )
                     if raw_file is None:
                         continue
-                except:
+                except Exception:
                     print(f"Subject {folder}/{file} not found.")
                     continue
                 reorder_channels_chbmit(raw_file)
@@ -339,9 +339,24 @@ def extract_training_data_and_labels_interictal(
     label_value: int = 2,
 ):
     total_samples = input_array.shape[2]
-    random_start_time = np.random.randint(
-        0, total_samples - samples_per_recording * fs * timestep
+
+    if overlap == 0:
+        max_samples = (total_samples - (total_samples % timestep * fs)) / (
+            timestep * fs
+        )
+    else:
+        max_samples = (total_samples - overlap * fs) / (
+            (timestep - overlap) * fs
+        )
+    max_samples = max_samples * fs
+    logging.info(f"Max samples: {max_samples}")
+    logging.info(f"Total samples: {total_samples}")
+    logging.info(
+        f"Samples per recording: {samples_per_recording* fs * timestep}"
     )
+    if max_samples < samples_per_recording * fs * timestep:
+        raise ValueError("Not enough samples in the recording.")
+    random_start_time = np.random.randint(0, total_samples - max_samples)
     interictal_period = input_array[
         :,
         :,
@@ -406,10 +421,10 @@ def extract_training_data_and_labels(
 
         preictal_event_labels = np.zeros(
             preictal_features.shape[0]
-        )  ## assign label 0 to every interictal period sample
+        )  # assign label 0 to every interictal period sample
         preictal_event_time_labels = prepare_timestep_label(
             preictal_period, sample_timestep * fs, preictal_overlap * fs
-        )  ## assign time to seizure for every sample [s]
+        )  # assign time to seizure for every sample [s]
         seizure_period = input_array[
             :, (start_ev) * fs : (stop_ev_array[n]) * fs
         ]
@@ -544,7 +559,7 @@ def get_patient_annotations(path_to_file: Path, savedir: Path):
                         sub_ev = event.split(": ")[1]
                         time_value = int(re.search(p, sub_ev).group())
 
-                        if not current_file_name in event_dict_start.keys():
+                        if current_file_name not in event_dict_start.keys():
                             event_dict_start[current_file_name] = [time_value]
                         else:
                             event_dict_start[current_file_name].append(
@@ -555,7 +570,7 @@ def get_patient_annotations(path_to_file: Path, savedir: Path):
 
                         time_value = int(re.search(p, sub_ev).group())
 
-                        if not current_file_name in event_dict_stop.keys():
+                        if current_file_name not in event_dict_stop.keys():
                             event_dict_stop[current_file_name] = [time_value]
 
                         else:
@@ -673,7 +688,7 @@ def create_recordings_plv(npy_dataset_path, dst_path):
             data_array = np.load(recording_path)  # load the recording
             starttime = timeit.default_timer()
             print(f"Calculating PLV for {record}")
-            plv_array = plv_connectivity(data_array.shape[0], data_array)
+            plv_array = plv_connectivity_old(data_array.shape[0], data_array)
             target_filename = os.path.join(save_folder, record)
             np.save(target_filename, plv_array)
             print(
