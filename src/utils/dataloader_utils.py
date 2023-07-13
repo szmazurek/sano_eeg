@@ -30,6 +30,7 @@ from sklearn.model_selection import train_test_split
 from torch_geometric.data import Data
 
 import utils.utils as utils
+import jax.numpy as jnp
 
 
 @dataclass
@@ -822,6 +823,7 @@ class HDFDatasetLoader:
                     + hdf5_file[patient]["features"].shape[0]
                 ] = hdf5_file[patient]["labels"]
                 current_sample += hdf5_file[patient]["features"].shape[0]
+                self.logger.info(f"Extracted data from patient {patient}.")
         if self.normalize_with != "global":
             idx = np.where(
                 labels_all == self.DEFAULT_CLASS_LABELS[self.normalize_with]
@@ -1135,7 +1137,7 @@ class HDFDatasetLoader:
         train_data_list: List[Data] = []
         if self.train_val_split_ratio > 0:
             val_data_list: List[Data] = []
-        num_processes = mp.cpu_count()
+        num_processes = 24
         pool = mp.Pool(processes=num_processes)
         try:
             if self.train_val_split_ratio > 0:

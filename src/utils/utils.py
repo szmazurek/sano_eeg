@@ -341,22 +341,22 @@ def extract_training_data_and_labels_interictal(
     total_samples = input_array.shape[2]
 
     if overlap == 0:
-        max_samples = (total_samples - (total_samples % timestep * fs)) / (
-            timestep * fs
-        )
+        min_samples = (
+            samples_per_recording * fs * timestep
+            - (total_samples % timestep * fs)
+        ) / (timestep * fs)
     else:
-        max_samples = (total_samples - overlap * fs) / (
-            (timestep - overlap) * fs
-        )
-    max_samples = max_samples * fs
-    logging.info(f"Max samples: {max_samples}")
+        min_samples = samples_per_recording * (timestep - overlap) + overlap
+    logging.info(f"Min needed samples: {min_samples}")
+    min_samples = min_samples * fs
+    logging.info(f"Min needed samples: {min_samples}")
     logging.info(f"Total samples: {total_samples}")
     logging.info(
-        f"Samples per recording: {samples_per_recording* fs * timestep}"
+        f"Samples per recording to be extracted: {samples_per_recording}"
     )
-    if max_samples < samples_per_recording * fs * timestep:
-        raise ValueError("Not enough samples in the recording.")
-    random_start_time = np.random.randint(0, total_samples - max_samples)
+    # if max_samples < samples_per_recording * fs * timestep:
+    #     raise ValueError("Not enough samples in the recording.")
+    random_start_time = np.random.randint(0, total_samples - min_samples)
     interictal_period = input_array[
         :,
         :,
