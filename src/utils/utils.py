@@ -124,6 +124,7 @@ def reorder_channels_chbmit(raw):
     raw.reorder_channels(ch_demanded_order)
     montage = mne.channels.read_custom_montage(Path("data/chb_mit_ch_locs.loc"))
     raw.set_montage(montage)
+    return None
 
 
 def run_preprocessing(
@@ -180,7 +181,7 @@ def run_preprocessing(
             mu
             + transform_raw[:, discard_first_n_components:]
             @ components[discard_first_n_components:]
-        )  ## remove first two components
+        )  # remove first two components
 
     return raw
 
@@ -252,7 +253,7 @@ def preprocess_dataset_seizures(
             continue
 
         reorder_channels_chbmit(raw_file)
-        ## THIS SHOULD BE PARAMETRIZED AS KWARGS
+        # THIS SHOULD BE PARAMETRIZED AS KWARGS
         # raw_instance = run_preprocessing(raw_file, apply_pca=False,avg_ref=True, freq_l=0.5, freq_h=30.0)
         raw_instance = raw_file
         save_path = os.path.join(preprocessed_dirpath, subject)
@@ -287,7 +288,7 @@ def preprocess_dataset_all(
                     print(f"Subject {folder}/{file} not found.")
                     continue
                 reorder_channels_chbmit(raw_file)
-                ## THIS SHOULD BE PARAMETRIZED AS KWARGS
+                # THIS SHOULD BE PARAMETRIZED AS KWARGS
                 raw_instance = run_preprocessing(
                     raw_file,
                     apply_pca=True,
@@ -305,6 +306,7 @@ def preprocess_dataset_all(
                     os.mkdir(os.path.split(save_path)[0])
                 mne.export.export_raw(save_path, raw_instance, fmt="edf")
                 print(f"Finished preprocessing subject {folder}/{file}.")
+    return None
 
 
 def prepare_timestep_array(array, timestep, overlap):
@@ -330,10 +332,10 @@ def prepare_timestep_label(array, timestep, overlap):
 
 def extract_training_data_and_labels_interictal(
     input_array,
-    samples_per_recording: int = 10,  ## number of samples per recording
+    samples_per_recording: int = 10,  # number of samples per recording
     fs: int = 256,
-    timestep: int = 10,  ## in seconds
-    overlap: int = 9,  ## in seconds
+    timestep: int = 10,  # in seconds
+    overlap: int = 9,  # in seconds
     label_value: int = 2,
 ):
     total_samples = input_array.shape[2]
@@ -365,7 +367,6 @@ def extract_training_data_and_labels(
     preictal_overlap: int = 9,  # in seconds
     ictal_overlap: int = 9,  # in seconds
     buffer_time: int = 5,  # in seconds
-
 ):
     """Function to extract seizure periods and preictal perdiods into samples ready to be put into graph neural network."""
     for n, start_ev in enumerate(start_ev_array):
@@ -396,7 +397,6 @@ def extract_training_data_and_labels(
             .swapaxes(0, 2)
             .swapaxes(0, 1)
         )  # reshape for preprocessing
-
 
         preictal_features = prepare_timestep_array(
             array=preictal_period,
@@ -449,7 +449,6 @@ def extract_training_data_and_labels(
                         full_preictal_event_time_labels,
                         preictal_event_time_labels,
                     )
-
                 )
             if len(seizure_features.shape) == 4:
                 full_seizure_features = np.concatenate(
@@ -580,6 +579,7 @@ def get_patient_annotations(path_to_file: Path, savedir: Path):
     dst_dir_stop = os.path.join(savedir, f"{patient_id}_stop.csv")
     pd.DataFrame.to_csv(df_start, dst_dir_start, index_label=False)
     pd.DataFrame.to_csv(df_end, dst_dir_stop, index_label=False)
+    return None
 
 
 def get_annotation_files(dataset_path, dst_path):
@@ -616,7 +616,6 @@ def save_timeseries_array(ds_path, target_path):
 
 
 def plv_connectivity_old(sensors, data):
-
     """
     ORGINALLY USED, DEPRECATED IN FAVOUR OF NEW FUNCTION
     Parameters
@@ -649,7 +648,6 @@ def plv_connectivity_old(sensors, data):
             connectivity_matrix[i, k] = (
                 np.abs(np.sum(np.exp(1j * (phase[i, :] - phase[k, :]))))
                 / data_points
-
             )
 
     # Computing connectivity vector
@@ -758,7 +756,6 @@ def compute_spect_corr_matrix(
     return spectral_correlation_matrix
 
 
-
 class EarlyStopping:
     """Credit to https://github.com/Bjarten/early-stopping-pytorch"""
 
@@ -771,7 +768,6 @@ class EarlyStopping:
         delta=0,
         path="checkpoint.pt",
         trace_func=print,
-
     ):
         """
         Args:
@@ -815,7 +811,7 @@ class EarlyStopping:
             self.save_checkpoint(val_loss, model)
             self.counter = 0
 
-    def save_checkpoint(self, val_loss, model):
+    def save_checkpoint(self, val_loss, model) -> None:
         """Saves model when validation loss decrease."""
         if self.verbose:
             self.trace_func(
@@ -823,3 +819,4 @@ class EarlyStopping:
             )
         torch.save(model.state_dict(), self.path)
         self.val_loss_min = val_loss
+        return None
