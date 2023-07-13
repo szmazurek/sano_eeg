@@ -16,11 +16,15 @@ import torch
 import torch_geometric
 import yaml
 from imblearn.over_sampling import SMOTE
-from mne_features.univariate import (compute_energy_freq_bands,
-                                     compute_higuchi_fd,
-                                     compute_hjorth_complexity,
-                                     compute_hjorth_mobility, compute_katz_fd,
-                                     compute_line_length, compute_variance)
+from mne_features.univariate import (
+    compute_energy_freq_bands,
+    compute_higuchi_fd,
+    compute_hjorth_complexity,
+    compute_hjorth_mobility,
+    compute_katz_fd,
+    compute_line_length,
+    compute_variance,
+)
 from scipy.signal import resample
 from sklearn.model_selection import train_test_split
 from torch_geometric.data import Data
@@ -61,7 +65,7 @@ class HDFDataset_Writer:
         cache_folder: (str) Path to the folder to store the dataset. Default: 'cache'.
     """
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self._initialize_logger()
         assert self.connectivity_metric in [
             "plv",
@@ -94,8 +98,9 @@ class HDFDataset_Writer:
         assert (
             self.ictal_overlap < self.sample_timestep
         ), "Ictal overlap must be smaller than sample timestep"
+        return None
 
-    def _initialize_logger(self):
+    def _initialize_logger(self) -> None:
         """Initializing logger."""
         if not os.path.exists("logs/"):
             os.makedirs("logs/")
@@ -108,9 +113,23 @@ class HDFDataset_Writer:
             force=True,
         )
         self.logger = logging.getLogger("hdf_dataset_writer")
+        return None
 
-    def _find_matching_configs(self, current_config):
-        def find_yaml_files(directory):
+    def _find_matching_configs(self, current_config: dict) -> bool:
+        """Utility to find configs with the same parameters in the cache folder.
+        Args:
+            current_config: (dict) Dictionary with the current config.
+        Returns:
+            bool: True if the config is found, False otherwise.
+        """
+
+        def find_yaml_files(directory: str) -> List[str]:
+            """Utility to get the yaml files from directory
+            Args:
+                directory: (str) Path to the directory to search in.
+            Returns:
+                yaml_files (list[str]): List of yaml files in the directory.
+            """
             yaml_files = []
             for root, dirs, files in os.walk(directory):
                 for file in files:
@@ -131,15 +150,27 @@ class HDFDataset_Writer:
                     return True
         return False
 
-    def _create_config_dict(self):
+    def _create_config_dict(self) -> dict:
+        """Method to create config dict with the dataset parameters.
+        Returns:
+            initial_config_dict: (dict) Dictionary with the dataset parameters.
+        """
         dataclass_keys = list(self.__dataclass_fields__.keys())
         dict_values = [self.__getattribute__(key) for key in dataclass_keys]
         initial_config_dict = dict(zip(dataclass_keys, dict_values))
         return initial_config_dict
 
-    def _create_config_file(self, config_dict, dataset_folder_path):
+    def _create_config_file(
+        self, config_dict: dict, dataset_folder_path: str
+    ) -> None:
+        """Method to save config dict to yaml file.
+        Args:
+            config_dict: (dict) Dictionary with the dataset parameters.
+            dataset_folder_path: (str) Path to the folder to save the config file to.
+        """
         with open(os.path.join(dataset_folder_path, "config.yaml"), "w") as f:
             yaml.dump(config_dict, f)
+        return None
 
     def _get_event_tables(self, patient_name: str) -> tuple[dict, dict]:
         """Read events for given patient into start and stop times lists
@@ -543,7 +574,7 @@ class HDFDataset_Writer:
         num_processes = 24  # mp.cpu_count()
         self.logger.info(num_processes)
         pool = mp.Pool(processes=num_processes)
-        
+
         result = pool.map(
             self._get_labels_features_edge_weights_interictal, self.patient_list
         )
@@ -646,7 +677,7 @@ class HDFDatasetLoader:
         self._determine_dataset_characteristics()
         self._show_used_classes()
 
-    def _check_arguments(self):
+    def _check_arguments(self) -> None:
         """Method to check if the arguments are valid."""
         assert (
             self.sampling_f > 0
@@ -687,6 +718,7 @@ class HDFDatasetLoader:
             assert (
                 self.loso_subject is None
             ), "Loso subject must be None in kfold mode"
+        return None
 
     def _show_used_classes(self):
         """Method to show which classes are used for training."""
@@ -697,7 +729,7 @@ class HDFDatasetLoader:
         for period in used_periods:
             print(f"USING CLASS: {period}")
 
-    def _determine_dataset_characteristics(self):
+    def _determine_dataset_characteristics(self) -> None:
         """Method to determine dataset characteristics."""
         self.hdf_data_path = f"{self.root}/dataset.hdf5"
         with h5py.File(self.hdf_data_path, "r") as hdf5_file:
@@ -709,8 +741,9 @@ class HDFDatasetLoader:
             self.patient_list.remove(self.loso_subject)
         self._determine_sample_count()
         self._get_mean_std()
+        return None
 
-    def _logger_init(self):
+    def _logger_init(self) -> None:
         """Initializing logger."""
         if not os.path.exists("logs/"):
             os.makedirs("logs/")
@@ -726,8 +759,9 @@ class HDFDatasetLoader:
         print(
             f"Logger initialized. Logs saved to logs/hdf_dataloader_{start_time}.log"
         )
+        return None
 
-    def _determine_sample_count(self):
+    def _determine_sample_count(self) -> None:
         """Method to determine number of samples in the dataset. the values are later used to
         create placeholder arrays during mean and standard deviation calculation.
         """
@@ -762,6 +796,7 @@ class HDFDatasetLoader:
             f"Dataset contains {self.val_samples} validation samples."
         )
         self.logger.info(f"Dataset contains {self.loso_samples} loso samples.")
+        return None
 
     def _get_mean_std(self):
         """Method to determine mean and standard deviation of interictal samples. Those values are used late to normalize all data."""
