@@ -566,6 +566,9 @@ class HDFDataset_Writer:
         )
         pool.close()
         pool.join()
+        if pool:
+            pool.terminate()
+            pool = None  # workaround for mp bug
         self.sample_count = 0
         for patient, preictal_samples, sample_count in result:
             self.preictal_samples_dict[patient] = preictal_samples
@@ -581,6 +584,9 @@ class HDFDataset_Writer:
         )
         pool.close()
         pool.join()
+        if pool:
+            pool.terminate()
+            pool = None  # workaround for mp bug
         for sample_count in result:
             self.sample_count += sample_count
 
@@ -800,30 +806,35 @@ class HDFDatasetLoader:
         self.logger.info(f"Dataset contains {self.loso_samples} loso samples.")
         return None
 
+    def _load_data_for_std_mean(self, patient):
+        while True:
+            try:
+                with h5py.File(self.hdf_data_path, "r") as hdf5_file:
+                    return (
+                        hdf5_file[patient]["features"][:],
+                        hdf5_file[patient]["labels"][:],
+                    )
+            except BlockingIOError:
+                self.logger.warning(
+                    f"Waiting for dataset {patient} to be loaded."
+                )
+                continue
+        return None
+
     def _get_mean_std(self):
         """Method to determine mean and standard deviation of interictal samples. Those values are used late to normalize all data."""
 
-        current_sample = 0
-        features_all = np.empty(
-            (
-                self.train_samples + self.val_samples,
-                self.n_channels,
-                self.n_features,
-            )
-        )  # for standarization only
-        labels_all = np.empty((self.train_samples + self.val_samples, 1))
-        with h5py.File(self.hdf_data_path, "r") as hdf5_file:
-            for patient in self.patient_list:
-                features_all[
-                    current_sample : current_sample
-                    + hdf5_file[patient]["features"].shape[0]
-                ] = hdf5_file[patient]["features"]
-                labels_all[
-                    current_sample : current_sample
-                    + hdf5_file[patient]["features"].shape[0]
-                ] = hdf5_file[patient]["labels"]
-                current_sample += hdf5_file[patient]["features"].shape[0]
-                self.logger.info(f"Extracted data from patient {patient}.")
+        start_time = time.time()
+        pool = mp.Pool(processes=24)
+        results = pool.map(self._load_data_for_std_mean, self.patient_list)
+        pool.close()
+        pool.join()
+        if pool:
+            pool.terminate()
+            pool = None
+        features_all, labels_all = zip(*results)
+        features_all = np.concatenate(features_all)
+        labels_all = np.concatenate(labels_all)
         if self.normalize_with != "global":
             idx = np.where(
                 labels_all == self.DEFAULT_CLASS_LABELS[self.normalize_with]
@@ -834,7 +845,7 @@ class HDFDatasetLoader:
             self.data_mean = np.mean(features_all)
             self.data_std = np.std(features_all)
         self.logger.info(
-            "Mean and standard deviation calculated for interictal samples."
+            f"Mean and standard deviation calculated for interictal samples in {time.time()-start_time}."
         )
 
     def _normalize_data(self, features: np.ndarray):
@@ -1146,6 +1157,9 @@ class HDFDatasetLoader:
                 )
                 pool.close()
                 pool.join()
+                if pool:
+                    pool.terminate()
+                    pool = None  # workaround for mp bugs
                 for train_data, val_data in result_list:
                     train_data_list = train_data_list + train_data
                     val_data_list = val_data_list + val_data
@@ -1155,6 +1169,9 @@ class HDFDatasetLoader:
                 )
                 pool.close()
                 pool.join()
+                if pool:
+                    pool.terminate()
+                    pool = None  # workaround for mp bugs
                 for train_data in result_list:
                     train_data_list = train_data_list + train_data
         except KeyboardInterrupt:

@@ -17,7 +17,9 @@ warnings.filterwarnings(
     "ignore", ".*does not have many workers.*"
 )  # DISABLED ON PURPOSE
 torch_geometric.seed_everything(42)
-api_key_file = open("/net/tscratch/people/plgmazurekagh/sano_eeg/wandb_api_key.txt", "r")
+api_key_file = open(
+    "/net/tscratch/people/plgmazurekagh/sano_eeg/wandb_api_key.txt", "r"
+)
 API_KEY = api_key_file.read()
 api_key_file.close()
 os.environ["WANDB_API_KEY"] = API_KEY
@@ -203,7 +205,7 @@ def loso_training():
         trainer.fit(model, train_dataloader, valid_dataloader)
         trainer.test(model, loso_dataloader, ckpt_path="best")
         wandb.finish()
-     
+    return None
 
 
 def kfold_cval():
@@ -335,10 +337,13 @@ def kfold_cval():
         key: summary_dict[key] / (fold + 1) for key in summary_dict.keys()
     }
     print(summary_dict)
+    return None
 
 
 if __name__ == "__main__":
+    torch.multiprocessing.set_sharing_strategy("file_system")
     if KFOlD_CVAL_MODE:
         kfold_cval()
     else:
         loso_training()
+        exit()
