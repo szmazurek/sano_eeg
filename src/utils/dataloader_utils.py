@@ -28,7 +28,7 @@ from mne_features.univariate import (
 from scipy.signal import resample
 from sklearn.model_selection import train_test_split
 from torch_geometric.data import Data
-
+import gc
 import utils.utils as utils
 
 CPUS_PER_TASK = int(os.environ["SLURM_CPUS_PER_TASK"])
@@ -503,7 +503,7 @@ class HDFDataset_Writer:
                 continue
 
             labels = labels.reshape((labels.shape[0], 1)).astype(np.float32)
-
+            # here lies the error
             try:
                 features_patient = np.concatenate([features_patient, features])
                 labels_patient = np.concatenate([labels_patient, labels])
@@ -555,6 +555,12 @@ class HDFDataset_Writer:
             except BlockingIOError:
                 self.logger.warning(f"Waiting for appending of {patient}.")
                 continue
+            except UnboundLocalError:
+                self.logger.warning(
+                    f"Cannot append {patient}, record {record}."
+                )
+                return 0
+
         return features_patient.shape[0]
 
     def _multiprocess_seizure_period_data_loading(self):
@@ -820,7 +826,6 @@ class HDFDatasetLoader:
                     f"Waiting for dataset {patient} to be loaded."
                 )
                 continue
-        return None
 
     def _get_mean_std(self):
         """Method to determine mean and standard deviation of interictal samples. Those values are used late to normalize all data."""
@@ -845,6 +850,9 @@ class HDFDatasetLoader:
         else:
             self.data_mean = np.mean(features_all)
             self.data_std = np.std(features_all)
+            
+        del features_all, labels_all
+        gc.collect()
         self.logger.info(
             f"Mean and standard deviation calculated for interictal samples in {time.time()-start_time}."
         )

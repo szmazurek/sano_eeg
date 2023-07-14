@@ -151,13 +151,13 @@ def loso_training():
         train_dataset, valid_dataset, loso_dataset = loader.get_datasets()
 
         train_dataloader = DataLoader(
-            train_dataset, batch_size=BATCH_SIZE, shuffle=True
+            train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0
         )
         valid_dataloader = DataLoader(
-            valid_dataset, batch_size=BATCH_SIZE, shuffle=False
+            valid_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0
         )
         loso_dataloader = DataLoader(
-            loso_dataset, batch_size=BATCH_SIZE, shuffle=False
+            loso_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0
         )
 
         wandb.init(
