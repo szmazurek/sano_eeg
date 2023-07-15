@@ -169,7 +169,7 @@ def loso_training():
         device_name = "cuda:0" if torch.cuda.is_available() else "cpu"
         precision = "bf16-mixed" if device_name == "cpu" else "16-mixed"
         strategy = pl.strategies.SingleDeviceStrategy(device=device_name)
-        wandb_logger = pl.loggers.WandbLogger(log_model='all')
+        wandb_logger = pl.loggers.WandbLogger(log_model=False)
         early_stopping = pl.callbacks.EarlyStopping(
             monitor="val_loss", patience=6, verbose=False, mode="min"
         )
@@ -203,7 +203,6 @@ def loso_training():
             weight_decay=0.0001,
             fft_mode=FFT,
         )
-        wandb_logger.watch(model)
         trainer.fit(model, train_dataloader, valid_dataloader)
         trainer.test(model, loso_dataloader, ckpt_path="best")
         wandb.finish()

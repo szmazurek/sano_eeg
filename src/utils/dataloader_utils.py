@@ -1176,18 +1176,17 @@ class HDFDatasetLoader:
         if self.train_val_split_ratio > 0:
             val_data_list: List[Data] = []
         num_processes = 24
-        pool = mp.Pool(processes=num_processes)
+        
         try:
             if self.train_val_split_ratio > 0:
-                result_list = pool.map(
-                    self._get_single_patient_data_train_val, self.patient_list
-                )
-                pool.close()
-                pool.join()
-                self.logger.info("Train and validation data loaded.")
-                if pool:
-                    pool.terminate()
-                    pool = None  # workaround for mp bugs
+                with mp.Pool(processes=num_processes) as pool:
+                    result_list = pool.map(
+                        self._get_single_patient_data_train_val,
+                        self.patient_list,
+                    )
+            
+                # self.logger.info("Train and validation data loaded.")
+ 
                 for train_data, val_data in result_list:
                     train_data_list = train_data_list + train_data
                     val_data_list = val_data_list + val_data
