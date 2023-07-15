@@ -7,7 +7,7 @@ import traceback
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Tuple, Union
-
+import psutil
 import h5py
 import networkx as nx
 import numpy as np
@@ -26,10 +26,14 @@ from mne_features.univariate import (
     compute_variance,
 )
 from scipy.signal import resample
+from scipy.stats import iqr
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import RobustScaler
 from torch_geometric.data import Data
 import gc
+import resource
 import utils.utils as utils
+from copy import deepcopy
 
 CPUS_PER_TASK = int(os.environ["SLURM_CPUS_PER_TASK"])
 
@@ -686,7 +690,7 @@ class HDFDatasetLoader:
     normalize_with: str = "interictal"
     kfold_cval_mode: bool = False
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self._check_arguments()
         self._logger_init()
         self._determine_dataset_characteristics()
@@ -735,7 +739,7 @@ class HDFDatasetLoader:
             ), "Loso subject must be None in kfold mode"
         return None
 
-    def _show_used_classes(self):
+    def _show_used_classes(self) -> None:
         """Method to show which classes are used for training."""
         self.logger.info(f"Used classes: {self.used_classes_dict}")
         used_periods = [
@@ -743,6 +747,7 @@ class HDFDatasetLoader:
         ]
         for period in used_periods:
             print(f"USING CLASS: {period}")
+        return None
 
     def _determine_dataset_characteristics(self) -> None:
         """Method to determine dataset characteristics."""
@@ -813,7 +818,7 @@ class HDFDatasetLoader:
         self.logger.info(f"Dataset contains {self.loso_samples} loso samples.")
         return None
 
-    def _load_data_for_std_mean(self, patient):
+    def _load_data_for_std_mean(self, patient : str) -> Tuple[np.ndarray, np.ndarray]:
         while True:
             try:
                 with h5py.File(self.hdf_data_path, "r") as hdf5_file:
@@ -827,7 +832,7 @@ class HDFDatasetLoader:
                 )
                 continue
 
-    def _get_mean_std(self):
+    def _get_mean_std(self) -> None:
         """Method to determine mean and standard deviation of interictal samples. Those values are used late to normalize all data."""
 
         start_time = time.time()
@@ -845,8 +850,12 @@ class HDFDatasetLoader:
             idx = np.where(
                 labels_all == self.DEFAULT_CLASS_LABELS[self.normalize_with]
             )[0]
-            self.data_mean = np.mean(features_all[idx])
-            self.data_std = np.std(features_all[idx])
+            self.median = np.median(features_all[idx])
+            self.scale = iqr(features_all[idx])
+            # self.data_mean = np.mean(features_all[idx])
+            # self.data_std = np.std(features_all[idx])
+            # self.logger.info(f"Mean {self.data_mean}")
+            # self.logger.info(f"Std {self.data_std}")
         else:
             self.data_mean = np.mean(features_all)
             self.data_std = np.std(features_all)
@@ -856,6 +865,7 @@ class HDFDatasetLoader:
         self.logger.info(
             f"Mean and standard deviation calculated for interictal samples in {time.time()-start_time}."
         )
+        return None
 
     def _normalize_data(self, features: np.ndarray):
         """Method to normalize input features data using mean and standard deviation extracted previously.
@@ -874,7 +884,7 @@ class HDFDatasetLoader:
 
     def update_classes(
         self, features: np.ndarray, labels: np.ndarray, edge_idx: np.ndarray
-    ):
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Method to properly relabel classes for training accordint to used_classes_dict argument."""
         """Convention:
             Base case: 0 - preictal, 1 - ictal, 2 - interictal
@@ -883,7 +893,9 @@ class HDFDatasetLoader:
             Case 3: 0 - preictal, 1 - interictal
         If present, ictal period always as class 1.
         Args:
+            features: (np.ndarray) Array with features to be relabeled.
             labels: (np.ndarray) Array with labels to be relabeled.
+            edge_idx: (np.ndarray) Array with edge indices to be relabeled.
         Returns:
             new_features: (np.ndarray) Array with removed examples from unused classes.
             new_labels: (np.ndarray) Array with relabeled labels.
@@ -936,7 +948,7 @@ class HDFDatasetLoader:
 
         return new_features, new_labels, new_idx
 
-    def _calculate_timeseries_features(self, features: np.ndarray):
+    def _calculate_timeseries_features(self, features: np.ndarray) -> np.ndarray:
         """Converting features to EEG timeseries features.
         Args:
             features: (np.ndarray) Array with features to be converted.
@@ -963,9 +975,10 @@ class HDFDatasetLoader:
                 for feature in features
             ]
         )
+
         return new_features
 
-    def _get_train_val_indices(self, n_samples: np.ndarray, labels: np.ndarray):
+    def _get_train_val_indices(self, n_samples: np.ndarray, labels: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Perfom train/validation split on provided indices with labels.
         Args:
             n_samples: (np.ndarray) Array with indices.
@@ -986,29 +999,29 @@ class HDFDatasetLoader:
         val_indices = np.sort(val_indices)
         return train_indices, val_indices
 
-    def _transform_features(self, features: np.ndarray):
+    def _transform_features(self, features: np.ndarray) -> torch.tensor:
         """Performs normalization and  optionally transformation of features.
         Args:
             features: (np.ndarray) Array with features to be transformed.
         Returns:
-            processed_features: (np.ndarray) Array with transformed features.
+            processed_features: (torch.tensor Array with transformed features.
         """
-        # processed_features = self._normalize_data(features)
-        processed_features = (features - self.data_mean) / self.data_std
 
+        # processed_features = self._normalize_data(features)
+        processed_features = (features - self.median) / self.scale
         if self.extract_features:
             processed_features = self._calculate_timeseries_features(
                 processed_features
             )
-
         elif self.fft:
-            processed_features = np.fft.rfft(processed_features)
+            processed_features = np.fft.rfft(processed_features, axis=2, norm='forward')
             processed_features = torch.from_numpy(processed_features)
+            processed_features = torch.square(torch.abs(processed_features)).float()
             return processed_features
         processed_features = torch.from_numpy(processed_features).float()
         return processed_features
 
-    def _transform_edges(self, edge_idx: np.ndarray):
+    def _transform_edges(self, edge_idx: np.ndarray) -> torch.tensor:
         """Converts the edges from numpy format to torch_geometric format.
         Args:
             edge_idx: (np.ndarray) Array with edges.
@@ -1021,7 +1034,7 @@ class HDFDatasetLoader:
         # edge_weight = data_object.weight
         return edge_index
 
-    def _transform_labels(self, labels: np.ndarray):
+    def _transform_labels(self, labels: np.ndarray) -> torch.tensor:
         """Convert labels to torch tensor.
         Args:
             labels: (np.ndarray) Array with labels.
@@ -1062,7 +1075,6 @@ class HDFDatasetLoader:
                 for i in range(len(processed_features))
             ]
             return data_list
-
         data_list = [
             Data(
                 x=processed_features[i],
@@ -1083,6 +1095,7 @@ class HDFDatasetLoader:
             train_data_list: (list) List of torch_geometric.data.Data objects for training.
             val_data_list: (list) List of torch_geometric.data.Data objects for validation.
         """
+       
         with h5py.File(self.hdf_data_path, "r") as hdf5_file:
             n_samples = np.arange(hdf5_file[patient]["features"].shape[0])
             labels = np.squeeze(hdf5_file[patient]["labels"])
@@ -1097,27 +1110,32 @@ class HDFDatasetLoader:
             features_val = hdf5_file[patient]["features"][val_indices]
             labels_val = hdf5_file[patient]["labels"][val_indices]
             edge_idx_val = hdf5_file[patient]["edge_idx"][val_indices]
-            if sum(self.used_classes_dict.values()) < 3:
-                (
-                    features_train,
-                    labels_train,
-                    edge_idx_train,
-                ) = self.update_classes(
-                    features_train, labels_train, edge_idx_train
-                )
-                features_val, labels_val, edge_idx_val = self.update_classes(
-                    features_val, labels_val, edge_idx_val
-                )
-
-            data_list_train = self._features_to_data_list(
-                features_train, edge_idx_train, labels_train
+        if sum(self.used_classes_dict.values()) < 3:
+            (
+                features_train,
+                labels_train,
+                edge_idx_train,
+            ) = self.update_classes(
+                features_train, labels_train, edge_idx_train
             )
-            data_list_val = self._features_to_data_list(
-                features_val, edge_idx_val, labels_val
+            features_val, labels_val, edge_idx_val = self.update_classes(
+                features_val, labels_val, edge_idx_val
             )
+    
+        data_list_train = self._features_to_data_list(
+            features_train, edge_idx_train, labels_train
+        )
+        data_list_val = self._features_to_data_list(
+            features_val, edge_idx_val, labels_val
+        )
+        del features_train, labels_train, edge_idx_train
+        del features_val, labels_val, edge_idx_val
+        gc.collect()
         self.logger.info(
             f"Processed patient {patient} for train and validation sets."
         )
+        self.logger.info(f"Reading patient {patient}, Virtual memory {psutil.virtual_memory()}")
+        self.logger.info(f"Resource limit {resource.getrlimit(resource.RLIMIT_NOFILE)}")
         return (data_list_train, data_list_val)
 
     def _get_single_patient_data(self, patient: str) -> List[Data]:
@@ -1157,7 +1175,7 @@ class HDFDatasetLoader:
         train_data_list: List[Data] = []
         if self.train_val_split_ratio > 0:
             val_data_list: List[Data] = []
-        num_processes = CPUS_PER_TASK
+        num_processes = 24
         pool = mp.Pool(processes=num_processes)
         try:
             if self.train_val_split_ratio > 0:
@@ -1166,6 +1184,7 @@ class HDFDatasetLoader:
                 )
                 pool.close()
                 pool.join()
+                self.logger.info("Train and validation data loaded.")
                 if pool:
                     pool.terminate()
                     pool = None  # workaround for mp bugs

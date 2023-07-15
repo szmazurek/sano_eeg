@@ -209,10 +209,16 @@ class GATv2Lightning(pl.LightningModule):
 
     def unpack_data_batch(self, data_batch):
         x = data_batch.x
-        if self.fft_mode:
-            x = torch.square(torch.abs(x))
-        x = x.float()
-
+        # print("pre")
+        # print(x.shape)
+        # if self.fft_mode:
+        #     x = torch.square(torch.abs(x))
+        #     print("mid")
+        #     print(x.shape)
+        # x = x.float()
+        # print("post")
+        # print(x.shape)
+        
         edge_index = data_batch.edge_index
         y = (
             data_batch.y.long()

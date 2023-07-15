@@ -79,7 +79,6 @@ USED_CLASSES_DICT = {
     "interictal": args.use_interictal_periods,
     "preictal": args.use_preictal_periods,
 }
-print(USED_CLASSES_DICT)
 SFREQ = args.sampling_freq
 DOWNSAMPLING_F = args.downsampling_freq
 TRAIN_VAL_SPLIT = args.train_test_split
@@ -170,7 +169,7 @@ def loso_training():
         device_name = "cuda:0" if torch.cuda.is_available() else "cpu"
         precision = "bf16-mixed" if device_name == "cpu" else "16-mixed"
         strategy = pl.strategies.SingleDeviceStrategy(device=device_name)
-        wandb_logger = pl.loggers.WandbLogger(log_model=False)
+        wandb_logger = pl.loggers.WandbLogger(log_model='all')
         early_stopping = pl.callbacks.EarlyStopping(
             monitor="val_loss", patience=6, verbose=False, mode="min"
         )
@@ -180,13 +179,14 @@ def loso_training():
             mode="min",
             verbose=False,
         )
-        callbacks = [early_stopping, best_checkpoint_callback]
+        callbacks = [early_stopping , best_checkpoint_callback]
         trainer = pl.Trainer(
             accelerator="auto",
             precision=precision,
             devices=1,
             max_epochs=EPOCHS,
             enable_progress_bar=True,
+
             strategy=strategy,
             deterministic=False,
             log_every_n_steps=1,
@@ -203,6 +203,7 @@ def loso_training():
             weight_decay=0.0001,
             fft_mode=FFT,
         )
+        wandb_logger.watch(model)
         trainer.fit(model, train_dataloader, valid_dataloader)
         trainer.test(model, loso_dataloader, ckpt_path="best")
         wandb.finish()
@@ -231,7 +232,7 @@ def kfold_cval():
         root=cache_file_path,
         train_val_split_ratio=TRAIN_VAL_SPLIT,
         loso_subject=None,
-        sampling_f=SFREQ,
+        sampling_f=DOWNSAMPLING_F,
         extract_features=MNE_FEATURES,
         fft=FFT,
         seed=SEED,
