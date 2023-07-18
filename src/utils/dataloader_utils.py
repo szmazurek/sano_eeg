@@ -37,7 +37,11 @@ import utils
 from collections import defaultdict
 from torch_geometric.data import Dataset, InMemoryDataset
 
-CPUS_PER_TASK = 4  # int(os.environ["SLURM_CPUS_PER_TASK"])
+CPUS_PER_TASK = (
+    int(os.environ["SLURM_CPUS_PER_TASK"])
+    if "SLURM_CPUS_PER_TASK" in os.environ
+    else 1
+)
 CTX = mp.get_context("fork")
 
 
@@ -1324,7 +1328,6 @@ class GraphDataset:
         return len(self._data_list) if self._data_list is not None else 0
 
     def load(self) -> None:
-
         data, slices = zip(*[torch.load(path) for path in self.object_paths])
         data_list = []
         for n in range(len(data)):
@@ -1339,4 +1342,3 @@ class GraphDataset:
 
     def __getitem__(self, idx: int) -> Data:
         return self._data_list[idx]
-
