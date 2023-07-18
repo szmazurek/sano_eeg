@@ -11,16 +11,18 @@ from sklearn.model_selection import StratifiedShuffleSplit
 from torch_geometric.loader import DataLoader
 
 import wandb
-from utils.dataloader_utils import HDFDataset_Writer, HDFDatasetLoader
+from utils.dataloader_utils import (
+    HDFDataset_Writer,
+    HDFDatasetLoader,
+    GraphDataset,
+)
 from models import GATv2Lightning
 
 warnings.filterwarnings(
     "ignore", ".*does not have many workers.*"
 )  # DISABLED ON PURPOSE
 torch_geometric.seed_everything(42)
-api_key_file = open(
-    "/net/tscratch/people/plgmazurekagh/sano_eeg/wandb_api_key.txt", "r"
-)
+api_key_file = open("wandb_api_key.txt", "r")
 API_KEY = api_key_file.read()
 
 api_key_file.close()
@@ -148,7 +150,11 @@ def loso_training():
             kfold_cval_mode=KFOlD_CVAL_MODE,
         )
 
-        train_dataset, valid_dataset, loso_dataset = loader.get_datasets()
+        train_ds_path, valid_ds_path, loso_ds_path = loader.get_datasets()
+
+        train_dataset = GraphDataset(train_ds_path)
+        valid_dataset = GraphDataset(valid_ds_path)
+        loso_dataset = GraphDataset(loso_ds_path)
 
         train_dataloader = DataLoader(
             train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0
@@ -344,7 +350,7 @@ def kfold_cval():
 if __name__ == "__main__":
     # torch.multiprocessing.set_start_method("forkserver", force=True)
     # mp.set_start_method("forkserver", force=True)
-    torch.multiprocessing.set_sharing_strategy("file_system")
+    #  torch.multiprocessing.set_sharing_strategy("file_system")
     print(mp.get_start_method())
     if KFOlD_CVAL_MODE:
         kfold_cval()
