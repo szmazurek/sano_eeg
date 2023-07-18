@@ -1324,6 +1324,7 @@ class GraphDataset:
         return len(self._data_list) if self._data_list is not None else 0
 
     def load(self) -> None:
+
         data, slices = zip(*[torch.load(path) for path in self.object_paths])
         data_list = []
         for n in range(len(data)):
@@ -1338,3 +1339,4 @@ class GraphDataset:
 
     def __getitem__(self, idx: int) -> Data:
         return self._data_list[idx]
+
