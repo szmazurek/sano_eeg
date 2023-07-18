@@ -218,7 +218,7 @@ class GATv2Lightning(pl.LightningModule):
         # x = x.float()
         # print("post")
         # print(x.shape)
-        
+
         edge_index = data_batch.edge_index
         y = (
             data_batch.y.long()
@@ -258,7 +258,6 @@ class GATv2Lightning(pl.LightningModule):
         rec = self.recall(training_step_outputs, training_step_gt)
         spec = self.specificity(training_step_outputs, training_step_gt)
         auroc = self.auroc(training_step_outputs, training_step_gt)
-
 
         self.log_dict(
             {
@@ -338,7 +337,6 @@ class GATv2Lightning(pl.LightningModule):
         auroc = self.auroc(test_step_outputs, test_step_gt)
         self.log_dict(
             {
-
                 "loso_sensitivity": rec,
                 "loso_specificity": spec,
                 "loso_AUROC": auroc,
@@ -361,12 +359,9 @@ class GATv2Lightning(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
-            self.parameters(),
-            lr=self.lr,
-            weight_decay=self.weight_decay
+            self.parameters(), lr=self.lr, weight_decay=self.weight_decay
         )
         return optimizer
-
 
 
 class GINCustom(torch.nn.Module):
@@ -409,7 +404,6 @@ class GINCustom(torch.nn.Module):
             negative_slope=0.01,
             dropout=dropout,
             improved=True,
-
         )
         self.att_2 = GATv2Conv(
             dim_h,
@@ -650,4 +644,3 @@ class GINLightning(pl.LightningModule):
             self.parameters(), lr=self.lr, weight_decay=self.weight_decay
         )
         return optimizer
-

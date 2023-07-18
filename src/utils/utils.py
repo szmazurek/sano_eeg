@@ -11,10 +11,10 @@ from mne_features.bivariate import compute_phase_lock_val, compute_spect_corr
 from typing import Union
 import logging
 
+
 # from mne_icalabel import label_components
 # from pyprep.prep_pipeline import PrepPipeline
 from mne.preprocessing import ICA
-import torch
 
 
 ch_demanded_order = [

@@ -1,3 +1,4 @@
+import multiprocessing as mp
 import os
 import warnings
 from argparse import ArgumentParser
@@ -179,14 +180,13 @@ def loso_training():
             mode="min",
             verbose=False,
         )
-        callbacks = [early_stopping , best_checkpoint_callback]
+        callbacks = [early_stopping, best_checkpoint_callback]
         trainer = pl.Trainer(
             accelerator="auto",
             precision=precision,
             devices=1,
             max_epochs=EPOCHS,
             enable_progress_bar=True,
-
             strategy=strategy,
             deterministic=False,
             log_every_n_steps=1,
@@ -342,7 +342,10 @@ def kfold_cval():
 
 
 if __name__ == "__main__":
+    # torch.multiprocessing.set_start_method("forkserver", force=True)
+    # mp.set_start_method("forkserver", force=True)
     torch.multiprocessing.set_sharing_strategy("file_system")
+    print(mp.get_start_method())
     if KFOlD_CVAL_MODE:
         kfold_cval()
     else:

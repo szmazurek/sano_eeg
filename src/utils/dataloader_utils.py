@@ -1,6 +1,8 @@
+import multiprocessing as mp
+
 import fnmatch
 import logging
-import multiprocessing as mp
+
 import os
 import time
 import traceback
@@ -28,14 +30,14 @@ from mne_features.univariate import (
 from scipy.signal import resample
 from scipy.stats import iqr
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import RobustScaler
 from torch_geometric.data import Data
 import gc
-import resource
 import utils.utils as utils
-from copy import deepcopy
+import tabulate
+from collections import defaultdict
 
-CPUS_PER_TASK = int(os.environ["SLURM_CPUS_PER_TASK"])
+CPUS_PER_TASK = int(os.environ["SLURM_CPUS_PER_TASK"]) - 1
+CTX = mp.get_context("fork")
 
 
 @dataclass
@@ -818,7 +820,9 @@ class HDFDatasetLoader:
         self.logger.info(f"Dataset contains {self.loso_samples} loso samples.")
         return None
 
-    def _load_data_for_std_mean(self, patient : str) -> Tuple[np.ndarray, np.ndarray]:
+    def _load_data_for_std_mean(
+        self, patient: str
+    ) -> Tuple[np.ndarray, np.ndarray]:
         while True:
             try:
                 with h5py.File(self.hdf_data_path, "r") as hdf5_file:
@@ -836,7 +840,7 @@ class HDFDatasetLoader:
         """Method to determine mean and standard deviation of interictal samples. Those values are used late to normalize all data."""
 
         start_time = time.time()
-        pool = mp.Pool(processes=CPUS_PER_TASK)
+        pool = CTX.Pool(processes=CPUS_PER_TASK)
         results = pool.map(self._load_data_for_std_mean, self.patient_list)
         pool.close()
         pool.join()
@@ -859,7 +863,7 @@ class HDFDatasetLoader:
         else:
             self.data_mean = np.mean(features_all)
             self.data_std = np.std(features_all)
-            
+
         del features_all, labels_all
         gc.collect()
         self.logger.info(
@@ -948,7 +952,9 @@ class HDFDatasetLoader:
 
         return new_features, new_labels, new_idx
 
-    def _calculate_timeseries_features(self, features: np.ndarray) -> np.ndarray:
+    def _calculate_timeseries_features(
+        self, features: np.ndarray
+    ) -> np.ndarray:
         """Converting features to EEG timeseries features.
         Args:
             features: (np.ndarray) Array with features to be converted.
@@ -978,7 +984,9 @@ class HDFDatasetLoader:
 
         return new_features
 
-    def _get_train_val_indices(self, n_samples: np.ndarray, labels: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def _get_train_val_indices(
+        self, n_samples: np.ndarray, labels: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Perfom train/validation split on provided indices with labels.
         Args:
             n_samples: (np.ndarray) Array with indices.
@@ -1014,9 +1022,13 @@ class HDFDatasetLoader:
                 processed_features
             )
         elif self.fft:
-            processed_features = np.fft.rfft(processed_features, axis=2, norm='forward')
+            processed_features = np.fft.rfft(
+                processed_features, axis=2, norm="forward"
+            )
             processed_features = torch.from_numpy(processed_features)
-            processed_features = torch.square(torch.abs(processed_features)).float()
+            processed_features = torch.square(
+                torch.abs(processed_features)
+            ).float()
             return processed_features
         processed_features = torch.from_numpy(processed_features).float()
         return processed_features
@@ -1083,7 +1095,31 @@ class HDFDatasetLoader:
             )
             for i in range(len(processed_features))
         ]
+        del processed_features, processed_labels
+        gc.collect()
         return data_list
+
+    def _get_mem_info(self, pid: int) -> dict[str, int]:
+        res = defaultdict(int)
+        for mmap in psutil.Process(pid).memory_maps():
+            res["rss"] += mmap.rss
+            res["pss"] += mmap.pss
+            res["uss"] += mmap.private_clean + mmap.private_dirty
+            res["shared"] += mmap.shared_clean + mmap.shared_dirty
+            if mmap.path.startswith("/"):  # looks like a file path
+                res["shared_file"] += mmap.shared_clean + mmap.shared_dirty
+        return res
+
+    def _table(self, data) -> str:
+        table = []
+        keys = list(data.keys())
+        now = str(int(time.perf_counter() % 1e5))
+        for pid, data in data.items():
+            table.append(
+                (now, str(pid))
+                + tuple(self._format_data(data[k]) for k in keys)
+            )
+        return tabulate.tabulate(table, headers=["time", "PID"] + keys)
 
     def _get_single_patient_data_train_val(
         self, patient: str
@@ -1095,7 +1131,11 @@ class HDFDatasetLoader:
             train_data_list: (list) List of torch_geometric.data.Data objects for training.
             val_data_list: (list) List of torch_geometric.data.Data objects for validation.
         """
-       
+        pid = os.getpid()
+        # self.logger.info(f"Initial logging of memory: {self.get_mem_info(pid)} for {patient}")
+        # nofile = len(os.listdir("/proc/" + str(os.getpid()) + "/fd/"))
+        # self.logger.info(f"Nofile start {nofile}")
+        self.logger.info("Alive")
         with h5py.File(self.hdf_data_path, "r") as hdf5_file:
             n_samples = np.arange(hdf5_file[patient]["features"].shape[0])
             labels = np.squeeze(hdf5_file[patient]["labels"])
@@ -1110,6 +1150,8 @@ class HDFDatasetLoader:
             features_val = hdf5_file[patient]["features"][val_indices]
             labels_val = hdf5_file[patient]["labels"][val_indices]
             edge_idx_val = hdf5_file[patient]["edge_idx"][val_indices]
+        # nofile = len(os.listdir("/proc/" + str(os.getpid()) + "/fd/"))
+        # self.logger.info(f"Nofile after hdf {nofile}")
         if sum(self.used_classes_dict.values()) < 3:
             (
                 features_train,
@@ -1121,21 +1163,37 @@ class HDFDatasetLoader:
             features_val, labels_val, edge_idx_val = self.update_classes(
                 features_val, labels_val, edge_idx_val
             )
-    
+
         data_list_train = self._features_to_data_list(
             features_train, edge_idx_train, labels_train
         )
         data_list_val = self._features_to_data_list(
             features_val, edge_idx_val, labels_val
         )
-        del features_train, labels_train, edge_idx_train
+        del (
+            features_train,
+            labels_train,
+            edge_idx_train,
+            labels,
+            train_indices,
+            val_indices,
+        )
         del features_val, labels_val, edge_idx_val
         gc.collect()
+        meminfo_table = self._get_mem_info(pid)
         self.logger.info(
             f"Processed patient {patient} for train and validation sets."
         )
-        self.logger.info(f"Reading patient {patient}, Virtual memory {psutil.virtual_memory()}")
-        self.logger.info(f"Resource limit {resource.getrlimit(resource.RLIMIT_NOFILE)}")
+        # self.logger.info(
+        #     f"Reading patient {patient}, Virtual memory {psutil.virtual_memory()}"
+        # )
+        self.logger.info(
+            f"End logging of memory: {meminfo_table} for {patient}"
+        )
+        # self.logger.info(f"Resource limit {resource.getrlimit(resource.RLIMIT_NOFILE)}")
+        # nofile = len(os.listdir("/proc/" + str(os.getpid()) + "/fd/"))
+        # self.logger.info(f"Nofile exit {nofile}")
+
         return (data_list_train, data_list_val)
 
     def _get_single_patient_data(self, patient: str) -> List[Data]:
@@ -1175,23 +1233,31 @@ class HDFDatasetLoader:
         train_data_list: List[Data] = []
         if self.train_val_split_ratio > 0:
             val_data_list: List[Data] = []
-        num_processes = 24
-        
+        num_processes = CPUS_PER_TASK
+
+        pool = CTX.Pool(processes=num_processes)
+        # result_list = []
         try:
             if self.train_val_split_ratio > 0:
-                with mp.Pool(processes=num_processes) as pool:
-                    result_list = pool.map(
-                        self._get_single_patient_data_train_val,
-                        self.patient_list,
-                    )
-            
-                # self.logger.info("Train and validation data loaded.")
- 
+                # for patient in self.patient_list:
+                #     result_list.append(self._get_single_patient_data_train_val(patient))
+                result_list = pool.map(
+                    self._get_single_patient_data_train_val,
+                    self.patient_list,
+                    # chunksize=1,
+                )
+                pool.close()
+                pool.join()
+                if pool:
+                    pool.terminate()
+                    pool = None  # workaround for mp bugs
+                self.logger.info("Train and validation data loaded.")
+
                 for train_data, val_data in result_list:
                     train_data_list = train_data_list + train_data
                     val_data_list = val_data_list + val_data
             else:
-                result_list = pool.map(
+                result_list = pool.map_async(
                     self._get_single_patient_data, self.patient_list
                 )
                 pool.close()
