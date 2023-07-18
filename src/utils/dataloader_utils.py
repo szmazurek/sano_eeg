@@ -1,5 +1,6 @@
 import multiprocessing as mp
-
+from torch_geometric.data.separate import separate
+from torch_geometric.data import Data
 import fnmatch
 import logging
 import shutil
@@ -32,11 +33,11 @@ from scipy.stats import iqr
 from sklearn.model_selection import train_test_split
 from torch_geometric.data import Data
 import gc
-import utils.utils as utils
+import utils
 from collections import defaultdict
 from torch_geometric.data import Dataset, InMemoryDataset
 
-CPUS_PER_TASK = int(os.environ["SLURM_CPUS_PER_TASK"])
+CPUS_PER_TASK = 4  # int(os.environ["SLURM_CPUS_PER_TASK"])
 CTX = mp.get_context("fork")
 
 
@@ -1310,7 +1311,7 @@ class HDFDatasetLoader(InMemoryDataset):
         return self.processed_file_paths
 
 
-class GraphDataset(InMemoryDataset):
+class GraphDataset:
     def __init__(self, root):
         super().__init__()
         self.object_paths = [
@@ -1319,11 +1320,23 @@ class GraphDataset(InMemoryDataset):
         self.root = root
         self.load()
 
-    @property
-    def processed_file_names(self) -> str | List[str] | Tuple:
-        return self.data_objects
+    def __len__(self) -> int:
+        return len(self._data_list) if self._data_list is not None else 0
 
     def load(self) -> None:
-        self.data, self.slices = zip(
-            *[torch.load(path) for path in self.object_paths]
-        )
+
+        data, slices = zip(*[torch.load(path) for path in self.object_paths])
+        data_list = []
+        for n in range(len(data)):
+            data_temp = data[n]
+            slices_temp = slices[n]
+            data_list += [
+                separate(Data, data_temp, index, slices_temp, decrement=False)
+                for index in range(len(data_temp.y))
+            ]
+        self._data_list = data_list
+        print(len(self._data_list))
+
+    def __getitem__(self, idx: int) -> Data:
+        return self._data_list[idx]
+
