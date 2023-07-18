@@ -155,7 +155,7 @@ def loso_training():
         train_dataset = GraphDataset(train_ds_path)
         valid_dataset = GraphDataset(valid_ds_path)
         loso_dataset = GraphDataset(loso_ds_path)
-
+        print(len(train_dataset))
         train_dataloader = DataLoader(
             train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0
         )
