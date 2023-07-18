@@ -1324,6 +1324,6 @@ class GraphDataset(InMemoryDataset):
         return self.data_objects
 
     def load(self) -> None:
-        self.data, self.slices = [
-            torch.load(path) for path in self.object_paths
-        ][0]
+        self.data, self.slices = zip(
+            *[torch.load(path) for path in self.object_paths]
+        )
