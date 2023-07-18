@@ -36,8 +36,8 @@ import utils.utils as utils
 from collections import defaultdict
 from torch_geometric.data import Dataset, InMemoryDataset
 
-CPUS_PER_TASK = 4  # int(os.environ["SLURM_CPUS_PER_TASK"]) - 1s
-CTX = mp.get_context("spawn")
+CPUS_PER_TASK = int(os.environ["SLURM_CPUS_PER_TASK"])
+CTX = mp.get_context("fork")
 
 
 @dataclass
