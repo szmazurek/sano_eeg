@@ -33,8 +33,8 @@ from sklearn.model_selection import train_test_split
 from torch_geometric.data import Data
 import gc
 import utils.utils as utils
-import tabulate
 from collections import defaultdict
+from torch_geometric.data import Dataset
 
 CPUS_PER_TASK = int(os.environ["SLURM_CPUS_PER_TASK"]) - 1
 CTX = mp.get_context("fork")
@@ -1109,17 +1109,6 @@ class HDFDatasetLoader:
             if mmap.path.startswith("/"):  # looks like a file path
                 res["shared_file"] += mmap.shared_clean + mmap.shared_dirty
         return res
-
-    def _table(self, data) -> str:
-        table = []
-        keys = list(data.keys())
-        now = str(int(time.perf_counter() % 1e5))
-        for pid, data in data.items():
-            table.append(
-                (now, str(pid))
-                + tuple(self._format_data(data[k]) for k in keys)
-            )
-        return tabulate.tabulate(table, headers=["time", "PID"] + keys)
 
     def _get_single_patient_data_train_val(
         self, patient: str
