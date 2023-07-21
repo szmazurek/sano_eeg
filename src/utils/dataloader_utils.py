@@ -39,7 +39,7 @@ from torch_geometric.data import InMemoryDataset
 CPUS_PER_TASK = (
     int(os.environ["SLURM_CPUS_PER_TASK"])
     if "SLURM_CPUS_PER_TASK" in os.environ
-    else 1
+    else mp.cpu_count()
 )
 CTX = mp.get_context("fork")
 

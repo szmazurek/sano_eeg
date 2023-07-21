@@ -137,7 +137,7 @@ class GATv2Lightning(pl.LightningModule):
         slope: float = 0.01,
         pooling_method: str = "mean",
         activation: str = "leaky_relu",
-        norm_method: str = "batch_norm",
+        norm_method: str = "batch",
         n_classes: int = 2,
         fft_mode: bool = False,
         lr=0.00001,
@@ -151,9 +151,9 @@ class GATv2Lightning(pl.LightningModule):
             "relu",
         ], 'activation must be either "leaky_relu" or "relu"'
         assert norm_method in [
-            "batch_norm",
-            "layer_norm",
-        ], 'norm_method must be either "batch_norm" or "layer_norm"'
+            "batch",
+            "layer",
+        ], 'norm_method must be either "batch" or "layer"'
         assert pooling_method in [
             "mean",
             "max",
@@ -166,7 +166,7 @@ class GATv2Lightning(pl.LightningModule):
         )
         norm_layer = (
             BatchNorm(hidden_dim * n_heads)
-            if norm_method == "batch_norm"
+            if norm_method == "batch"
             else LayerNorm(hidden_dim * n_heads)
         )
         dropout_layer = nn.Dropout(dropout)

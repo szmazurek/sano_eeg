@@ -96,7 +96,7 @@ BUFFER_TIME = args.buffer_time
 CACHE_DIR = args.cache_dir
 SEED = args.seed
 KFOLD_CVAL_MODE = args.kfold_cval_mode
-CONFIG = dict(
+INITIAL_CONFIG = dict(
     timestep=TIMESTEP,
     inter_overlap=INTER_OVERLAP,
     preictal_overlap=PREICTAL_OVERLAP,
@@ -117,6 +117,16 @@ CONFIG = dict(
     train_val_split=TRAIN_VAL_SPLIT,
     connectivity_metric=CONNECTIVITY_METRIC,
     seed=SEED,
+    n_gat_layers=2,
+    hidden_dim=32,
+    dropout=0.4,
+    slope=0.01,
+    pooling_method="mean",
+    norm_method="batch",
+    activation="leaky_relu",
+    n_heads=4,
+    lr=0.0001,
+    weight_decay=0.0001,
 )
 
 
@@ -171,7 +181,7 @@ def loso_training():
             project="validation_sano_eeg",
             group=EXP_NAME,
             name=loso_patient,
-            config=CONFIG,
+            config=INITIAL_CONFIG,
         )
 
         device_name = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -201,13 +211,22 @@ def loso_training():
             logger=wandb_logger,
             callbacks=callbacks,
         )
+        CONFIG = wandb.config
         n_classes = sum(USED_CLASSES_DICT.values())
         features_shape = train_dataset[0].x.shape[-1]
         model = GATv2Lightning(
             features_shape,
             n_classes=n_classes,
-            lr=0.0001,
-            weight_decay=0.0001,
+            n_gat_layers=CONFIG.n_gat_layers,
+            hidden_dim=CONFIG.hidden_dim,
+            n_heads=CONFIG.n_heads,
+            slope=CONFIG.slope,
+            dropout=CONFIG.dropout,
+            pooling_method=CONFIG.pooling_method,
+            activation=CONFIG.activation,
+            norm_method=CONFIG.norm_method,
+            lr=CONFIG.lr,
+            weight_decay=CONFIG.weight_decay,
             fft_mode=FFT,
         )
         trainer.fit(model, train_dataloader, valid_dataloader)
@@ -247,17 +266,25 @@ def kfold_cval():
         kfold_cval_mode=KFOLD_CVAL_MODE,
     )
 
-    full_datalist = loader.get_datasets()[0]
-    features_shape = full_datalist[0].x.shape[-1]
-    label_array = np.array([data.y.item() for data in full_datalist]).reshape(
+    full_data_path = loader.get_datasets()[0]
+    full_dataset = GraphDataset(full_data_path)
+    features_shape = full_dataset[0].x.shape[-1]
+    label_array = np.array([data.y.item() for data in full_dataset]).reshape(
         -1, 1
     )
     patient_id_array = np.array(
-        [data.patient_id for data in full_datalist]
+        [data.patient_id.item() for data in full_dataset]
     ).reshape(-1, 1)
     class_labels_patient_labels = np.concatenate(
         [label_array, patient_id_array], axis=1
     )
+    wandb.init(
+        project="validation_sano_eeg",
+        group=EXP_NAME,
+        name="Arch search 1",
+        config=INITIAL_CONFIG,
+    )
+    CONFIG = wandb.config
     torch_geometric.seed_everything(42)
 
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -266,7 +293,7 @@ def kfold_cval():
     strategy = pl.strategies.SingleDeviceStrategy(device=torch_device)
     kfold = StratifiedShuffleSplit(n_splits=5, test_size=0.1, random_state=42)
     for fold, (train_idx, test_idx) in enumerate(
-        kfold.split(full_datalist, class_labels_patient_labels)
+        kfold.split(np.zeros(len(full_dataset)), class_labels_patient_labels)
     ):
         print(f"Fold {fold}")
 
@@ -274,10 +301,10 @@ def kfold_cval():
         splitter = StratifiedShuffleSplit(
             n_splits=1, test_size=0.1, random_state=42
         )
-        train_idx, val_idx = next(splitter.split(train_idx, train_labels))
-        train_dataset = [full_datalist[idx] for idx in train_idx]
-        valid_dataset = [full_datalist[idx] for idx in val_idx]
-        test_data = [full_datalist[idx] for idx in test_idx]
+        sub_train_idx, val_idx = next(splitter.split(train_idx, train_labels))
+        train_dataset = [full_dataset[idx] for idx in sub_train_idx]
+        valid_dataset = [full_dataset[idx] for idx in val_idx]
+        test_data = [full_dataset[idx] for idx in test_idx]
 
         train_dataloader = DataLoader(
             train_dataset, batch_size=BATCH_SIZE, shuffle=True
@@ -288,19 +315,13 @@ def kfold_cval():
         test_dataloader = DataLoader(
             test_data, batch_size=BATCH_SIZE, shuffle=False
         )
-        wandb.init(
-            project="validation_sano_eeg",
-            group=EXP_NAME,
-            name=f"Fold {fold}",
-            config=CONFIG,
-        )
 
         device_name = "cuda:0" if torch.cuda.is_available() else "cpu"
         precision = "bf16-mixed" if device_name == "cpu" else "16-mixed"
         strategy = pl.strategies.SingleDeviceStrategy(device=device_name)
         wandb_logger = pl.loggers.WandbLogger(log_model=False)
         early_stopping = pl.callbacks.EarlyStopping(
-            monitor="val_loss", patience=6, verbose=False, mode="min"
+            monitor="val_loss", patience=10, verbose=False, mode="min"
         )
         best_checkpoint_callback = pl.callbacks.ModelCheckpoint(
             monitor="val_loss",
@@ -324,18 +345,27 @@ def kfold_cval():
         )
         n_classes = sum(USED_CLASSES_DICT.values())
         features_shape = train_dataset[0].x.shape[-1]
+        print(CONFIG.keys())
         model = GATv2Lightning(
             features_shape,
             n_classes=n_classes,
-            lr=0.0001,
-            weight_decay=0.0001,
+            n_gat_layers=CONFIG.n_gat_layers,
+            hidden_dim=CONFIG.hidden_dim,
+            n_heads=CONFIG.n_heads,
+            slope=CONFIG.slope,
+            dropout=CONFIG.dropout,
+            pooling_method=CONFIG.pooling_method,
+            activation=CONFIG.activation,
+            norm_method=CONFIG.norm_method,
+            lr=CONFIG.lr,
+            weight_decay=CONFIG.weight_decay,
             fft_mode=FFT,
         )
         trainer.fit(model, train_dataloader, valid_dataloader)
         eval_results = trainer.test(model, test_dataloader, ckpt_path="best")[
             0
         ]
-        wandb.finish()
+
         if fold == 0:
             summary_dict = eval_results
         else:
@@ -346,7 +376,8 @@ def kfold_cval():
     summary_dict = {
         key: summary_dict[key] / (fold + 1) for key in summary_dict.keys()
     }
-    print(summary_dict)
+    wandb.log({"kfold_final_loss": summary_dict["test_loss_epoch"]})
+    wandb.finish()
     return None
 
 
