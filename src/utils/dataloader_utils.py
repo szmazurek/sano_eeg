@@ -31,11 +31,10 @@ from mne_features.univariate import (
 from scipy.signal import resample
 from scipy.stats import iqr
 from sklearn.model_selection import train_test_split
-from torch_geometric.data import Data
 import gc
-import utils
+import utils.utils as utils
 from collections import defaultdict
-from torch_geometric.data import Dataset, InMemoryDataset
+from torch_geometric.data import InMemoryDataset
 
 CPUS_PER_TASK = (
     int(os.environ["SLURM_CPUS_PER_TASK"])
@@ -96,11 +95,15 @@ class HDFDataset_Writer:
         assert (
             self.seizure_lookback > 0
         ), "Seizure lookback must be positive integer"
-        assert self.inter_overlap >= 0, "Inter overlap must be positive integer"
+        assert (
+            self.inter_overlap >= 0
+        ), "Inter overlap must be positive integer"
         assert (
             self.preictal_overlap >= 0
         ), "Preictal overlap must be positive integer"
-        assert self.ictal_overlap >= 0, "Ictal overlap must be positive integer"
+        assert (
+            self.ictal_overlap >= 0
+        ), "Ictal overlap must be positive integer"
         assert self.buffer_time >= 0, "Buffer time must be positive integer"
         assert (
             self.inter_overlap < self.sample_timestep
@@ -225,11 +228,15 @@ class HDFDataset_Writer:
     def _create_edge_idx_and_attributes(
         self, connectivity_matrix: np.ndarray, threshold: float = 0
     ) -> np.ndarray:
-        """Create adjacency matrix from connectivity matrix. Edges are created for values above threshold.
-        If the edge is created, it has an attribute "weight" with the value of the connectivity measure associated.
+        """Create adjacency matrix from connectivity matrix. Edges
+        are created for values above threshold. If the edge is created,
+        it has an attribute "weight" with the value of the connectivity
+        measure associated.
         Args:
-            connectivity_matrix: (np.ndarray) Array with connectivity values.
-            threshold: (float) Threshold for creating edges. (default: 0.0)
+            connectivity_matrix: (np.ndarray) Array with connectivity
+        values.
+            threshold: (float) Threshold for creating edges.
+        (default: 0.0)
         Returns:
             edge_index: (np.ndarray) Array with edge indices.
         """
@@ -250,13 +257,16 @@ class HDFDataset_Writer:
         return edge_index
 
     def _apply_smote(self, features, labels):
-        """Performs SMOTE oversampling on the dataset. Implemented for preictal vs ictal scenarion only.
+        """Performs SMOTE oversampling on the dataset. Implemented for
+        preictal vs ictal scenarion only.
         Args:
             features: (np.ndarray) Array with features.
             labels: (np.ndarray) Array with labels.
         Returns:
-            x_train_smote: (np.ndarray) Array with SMOTE oversampled features.
-            y_train_smote: (np.ndarray) Array with SMOTE oversampled labels.
+            x_train_smote: (np.ndarray) Array with SMOTE
+        oversampled features.
+            y_train_smote: (np.ndarray) Array with SMOTE
+        oversampled labels.
         """
         dim_1, dim_2, dim_3 = features.shape
 
@@ -370,7 +380,9 @@ class HDFDataset_Writer:
                 features_patient = np.concatenate([features_patient, features])
                 labels_patient = np.concatenate([labels_patient, labels])
                 edge_idx_patient = np.concatenate([edge_idx_patient, edge_idx])
-                # edge_weights_patient = np.concatenate([edge_weights_patient, edge_weights])
+                # edge_weights_patient = np.concatenate(
+                # [edge_weights_patient, edge_weights]
+                # )
             except NameError:
                 features_patient = features
                 labels_patient = labels
@@ -422,11 +434,14 @@ class HDFDataset_Writer:
     def _get_labels_features_edge_weights_interictal(
         self, patient, samples_patient: Union[int, None] = None
     ):
-        """Method to extract features, labels and edge weights for interictal samples.
+        """Method to extract features, labels and edge weights for
+        interictal samples.
         Args:
             patient: (str) Name of the patient to extract the data for.
-            samples_patient (optional): (int) Number of samples to extract for a patient.
-        Samples are extracted from non-seizure recordings for a patient, starting from random time point.
+            samples_patient (optional): (int) Number of samples to
+        extract for a patient.
+        Samples are extracted from non-seizure recordings for a patient,
+        starting from random time point.
         If not specified, the number of samples is calculated as the number of interictal samples for a patient
         divided by the number of recordings for a patient.
 
@@ -532,9 +547,9 @@ class HDFDataset_Writer:
                     current_patient_features = hdf5_file[patient][
                         "features"
                     ].shape[0]
-                    current_patient_labels = hdf5_file[patient]["labels"].shape[
-                        0
-                    ]
+                    current_patient_labels = hdf5_file[patient][
+                        "labels"
+                    ].shape[0]
                     current_patient_edge_idx = hdf5_file[patient][
                         "edge_idx"
                     ].shape[0]
@@ -598,7 +613,8 @@ class HDFDataset_Writer:
         pool = mp.Pool(processes=num_processes)
 
         result = pool.map(
-            self._get_labels_features_edge_weights_interictal, self.patient_list
+            self._get_labels_features_edge_weights_interictal,
+            self.patient_list,
         )
         pool.close()
         pool.join()
@@ -1151,17 +1167,17 @@ class HDFDatasetLoader(InMemoryDataset):
     def _get_single_patient_data_train_val(
         self, patient: str
     ) -> Tuple[List[Data], List[Data]]:
-        """Get patient data for train and validation sets.
+        """Method to create data list from a signle patient for training and validation sets.
         Args:
             patient: (str) Name of the patient to get the data for.
         Returns:
-            train_data_list: (list) List of torch_geometric.data.Data objects for training.
-            val_data_list: (list) List of torch_geometric.data.Data objects for validation.
+            train_data_list (list): List of torch_geometric.data.Data objects for training.
         """
+
         pid = os.getpid()
         # self.logger.info(f"Initial logging of memory: {self.get_mem_info(pid)} for {patient}")
-        # nofile = len(os.listdir("/proc/" + str(os.getpid()) + "/fd/"))
-        # self.logger.info(f"Nofile start {nofile}")
+        nofile = len(os.listdir("/proc/" + str(os.getpid()) + "/fd/"))
+        self.logger.info(f"Nofile start {nofile}")
         self.logger.info("Alive")
         with h5py.File(self.hdf_data_path, "r") as hdf5_file:
             n_samples = np.arange(hdf5_file[patient]["features"].shape[0])
@@ -1230,8 +1246,8 @@ class HDFDatasetLoader(InMemoryDataset):
             f"End logging of memory: {meminfo_table} for {patient}"
         )
         # self.logger.info(f"Resource limit {resource.getrlimit(resource.RLIMIT_NOFILE)}")
-        # nofile = len(os.listdir("/proc/" + str(os.getpid()) + "/fd/"))
-        # self.logger.info(f"Nofile exit {nofile}")
+        nofile = len(os.listdir("/proc/" + str(os.getpid()) + "/fd/"))
+        self.logger.info(f"Nofile exit {nofile}")
 
         return None
 
@@ -1296,7 +1312,9 @@ class HDFDatasetLoader(InMemoryDataset):
                 self.logger.info("Train and validation data loaded.")
 
             else:
-                pool.map_async(self._get_single_patient_data, self.patient_list)
+                pool.map_async(
+                    self._get_single_patient_data, self.patient_list
+                )
                 pool.close()
                 pool.join()
                 if pool:

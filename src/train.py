@@ -52,7 +52,9 @@ parser.add_argument("--batch_size", type=int, default=256)
 parser.add_argument("--cache_dir", type=str, default="data/cache")
 parser.add_argument("--exp_name", type=str, default="eeg_exp")
 parser.add_argument("--npy_data_dir", type=str, default="data/npy_data")
-parser.add_argument("--event_tables_dir", type=str, default="data/event_tables")
+parser.add_argument(
+    "--event_tables_dir", type=str, default="data/event_tables"
+)
 parser.add_argument("--use_ictal_periods", action="store_true", default=False)
 parser.add_argument(
     "--use_preictal_periods", action="store_true", default=False
@@ -155,7 +157,6 @@ def loso_training():
         train_dataset = GraphDataset(train_ds_path)
         valid_dataset = GraphDataset(valid_ds_path)
         loso_dataset = GraphDataset(loso_ds_path)
-        print(len(train_dataset))
         train_dataloader = DataLoader(
             train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0
         )
@@ -331,7 +332,9 @@ def kfold_cval():
             fft_mode=FFT,
         )
         trainer.fit(model, train_dataloader, valid_dataloader)
-        eval_results = trainer.test(model, test_dataloader, ckpt_path="best")[0]
+        eval_results = trainer.test(model, test_dataloader, ckpt_path="best")[
+            0
+        ]
         wandb.finish()
         if fold == 0:
             summary_dict = eval_results
