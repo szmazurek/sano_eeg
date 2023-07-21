@@ -2,8 +2,9 @@ import torch
 import lightning.pytorch as pl
 from torch import nn
 from torch.nn import functional as F
-from torch_geometric.nn import global_mean_pool, global_add_pool
-from torch_geometric.nn import GCNConv, GATv2Conv, GINConv
+from torch_geometric.nn import global_mean_pool, global_add_pool, SAGPooling
+from torch_geometric.nn import GCNConv, GATv2Conv, GINConv, Linear
+from torch_geometric.nn.norm import BatchNorm, LayerNorm
 from torchmetrics import (
     Specificity,
     Recall,
@@ -22,7 +23,9 @@ class ClassicGCN(torch.nn.Module):
         )
 
         self.recurrent_2 = GCNConv(32, 64, add_self_loops=True, improved=False)
-        self.recurrent_3 = GCNConv(64, 128, add_self_loops=True, improved=False)
+        self.recurrent_3 = GCNConv(
+            64, 128, add_self_loops=True, improved=False
+        )
         self.fc1 = nn.Linear(128, 64)
         self.fc2 = nn.Linear(64, 32)
         self.fc3 = nn.Linear(32, 16)
@@ -122,8 +125,14 @@ class GATv2Lightning(pl.LightningModule):
     def __init__(
         self,
         in_features: int,
+        n_gat_layers: int = 2,
         hidden_dim: int = 32,
         n_heads: int = 4,
+        dropout: float = 0.4,
+        slope: float = 0.01,
+        pooling_method: str = "mean",
+        activation: str = "leaky_relu",
+        norm_method: str = "batch_norm",
         n_classes: int = 2,
         fft_mode: bool = False,
         lr=0.00001,
@@ -132,37 +141,72 @@ class GATv2Lightning(pl.LightningModule):
         super(GATv2Lightning, self).__init__()
         assert n_classes > 1, "n_classes must be greater than 1"
         self.classification_mode = "multiclass" if n_classes > 2 else "binary"
-        out_dim = hidden_dim * 2
-        self.recurrent_1 = GATv2Conv(
-            in_features,
-            hidden_dim,
-            heads=n_heads,
-            negative_slope=0.01,
-            dropout=0.4,
-            add_self_loops=True,
-            improved=True,
-            edge_dim=1,
+
+        act_fn = (
+            nn.LeakyReLU(slope, inplace=True)
+            if activation == "leaky_relu"
+            else nn.ReLU(inplace=True)
         )
-        self.recurrent_2 = GATv2Conv(
-            hidden_dim * n_heads,
-            out_dim,
-            heads=n_heads,
-            negative_slope=0.01,
-            dropout=0.4,
-            add_self_loops=True,
-            improved=True,
-            edge_dim=1,
+        norm_layer = (
+            BatchNorm(hidden_dim * n_heads)
+            if norm_method == "batch_norm"
+            else LayerNorm(hidden_dim * n_heads)
+        )
+        dropout_layer = nn.Dropout(dropout)
+        classifier_out_neurons = n_classes if n_classes > 2 else 1
+        self.feature_extractor = nn.Sequential()
+        for i in range(n_gat_layers):
+            if i == 0:
+                self.feature_extractor.add_module(
+                    "gat_{}".format(i),
+                    GATv2Conv(
+                        in_features,
+                        hidden_dim,
+                        heads=n_heads,
+                        negative_slope=slope,
+                        dropout=dropout,
+                        add_self_loops=True,
+                        improved=True,
+                        edge_dim=1,
+                    ),
+                )
+
+            else:
+                self.feature_extractor.add_module(
+                    "gat_{}".format(i),
+                    GATv2Conv(
+                        hidden_dim * n_heads,
+                        hidden_dim,
+                        heads=n_heads,
+                        negative_slope=slope,
+                        dropout=dropout,
+                        add_self_loops=True,
+                        improved=True,
+                        edge_dim=1,
+                    ),
+                )
+            self.feature_extractor.add_module(norm_layer)
+            self.feature_extractor.add_module(act_fn)
+
+        self.classifier = nn.Sequential(
+            Linear(
+                hidden_dim * n_heads, 512, weight_initializer="kaiming_uniform"
+            ),
+            dropout_layer,
+            act_fn,
+            Linear(512, 128, weight_initializer="kaiming_uniform"),
+            dropout_layer,
+            act_fn,
+            Linear(
+                128,
+                classifier_out_neurons,
+                weight_initializer="kaiming_uniform",
+            ),
         )
 
-        self.fc1 = nn.Linear(out_dim * n_heads, 512)
-        nn.init.kaiming_uniform_(self.fc1.weight, a=0.01)
-        self.fc2 = nn.Linear(512, 128)
-        nn.init.kaiming_uniform_(self.fc2.weight, a=0.01)
-        self.fc3 = nn.Linear(128, n_classes if n_classes > 2 else 1)
-        nn.init.kaiming_uniform_(self.fc3.weight, a=0.01)
-        self.batch_norm_1 = nn.BatchNorm1d(hidden_dim * n_heads)
-        self.batch_norm_2 = nn.BatchNorm1d(out_dim * n_heads)
-        self.dropout = nn.Dropout()
+        self.pooling_method = pooling_method
+        if pooling_method == "attention":
+            self.sag_pool = SAGPooling(hidden_dim * n_heads, ratio=0.5)
         self.n_classes = n_classes
         self.fft_mode = fft_mode
         self.lr = lr
@@ -189,36 +233,17 @@ class GATv2Lightning(pl.LightningModule):
         self.test_step_gt = []
 
     def forward(self, x, edge_index, pyg_batch, edge_attr=None):
-        h = self.recurrent_1(x, edge_index=edge_index, edge_attr=None)
-        h = self.batch_norm_1(h)
-        h = F.leaky_relu(h)
-        h = self.recurrent_2(h, edge_index=edge_index, edge_attr=None)
-        h = self.batch_norm_2(h)
-        h = F.leaky_relu(h)
-        h = global_mean_pool(h, pyg_batch)
-        h = self.dropout(h)
-        h = self.fc1(h)
-        h = F.leaky_relu(h)
-        h = self.dropout(h)
-        h = self.fc2(h)
-        h = F.leaky_relu(h)
-        h = self.dropout(h)
-        h = self.fc3(h).squeeze(1)
-
-        return h
+        h = self.feature_extractor(x, edge_index=edge_index, edge_attr=None)
+        h = (
+            global_mean_pool(h, pyg_batch)
+            if self.pooling_method == "mean"
+            else self.sag_pool(h, pyg_batch)
+        )
+        h = self.classifier(h)
+        return h.squeeze(1)
 
     def unpack_data_batch(self, data_batch):
         x = data_batch.x
-        # print("pre")
-        # print(x.shape)
-        # if self.fft_mode:
-        #     x = torch.square(torch.abs(x))
-        #     print("mid")
-        #     print(x.shape)
-        # x = x.float()
-        # print("post")
-        # print(x.shape)
-
         edge_index = data_batch.edge_index
         y = (
             data_batch.y.long()
