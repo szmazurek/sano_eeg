@@ -95,7 +95,7 @@ CONNECTIVITY_METRIC = args.connectivity_metric
 BUFFER_TIME = args.buffer_time
 CACHE_DIR = args.cache_dir
 SEED = args.seed
-KFOlD_CVAL_MODE = args.kfold_cval_mode
+KFOLD_CVAL_MODE = args.kfold_cval_mode
 CONFIG = dict(
     timestep=TIMESTEP,
     inter_overlap=INTER_OVERLAP,
@@ -149,7 +149,7 @@ def loso_training():
             seed=SEED,
             used_classes_dict=USED_CLASSES_DICT,
             normalize_with=NORMALIZING_PERIOD,
-            kfold_cval_mode=KFOlD_CVAL_MODE,
+            kfold_cval_mode=KFOLD_CVAL_MODE,
         )
 
         train_ds_path, valid_ds_path, loso_ds_path = loader.get_datasets()
@@ -244,7 +244,7 @@ def kfold_cval():
         seed=SEED,
         used_classes_dict=USED_CLASSES_DICT,
         normalize_with=NORMALIZING_PERIOD,
-        kfold_cval_mode=KFOlD_CVAL_MODE,
+        kfold_cval_mode=KFOLD_CVAL_MODE,
     )
 
     full_datalist = loader.get_datasets()[0]
@@ -355,7 +355,7 @@ if __name__ == "__main__":
     # mp.set_start_method("forkserver", force=True)
     #  torch.multiprocessing.set_sharing_strategy("file_system")
     print(mp.get_start_method())
-    if KFOlD_CVAL_MODE:
+    if KFOLD_CVAL_MODE:
         kfold_cval()
     else:
         loso_training()

@@ -2,8 +2,13 @@ import torch
 import lightning.pytorch as pl
 from torch import nn
 from torch.nn import functional as F
-from torch_geometric.nn import global_mean_pool, global_add_pool, SAGPooling
-from torch_geometric.nn import GCNConv, GATv2Conv, GINConv, Linear
+from torch_geometric.nn import (
+    global_mean_pool,
+    global_add_pool,
+    global_max_pool,
+)
+from torch_geometric.nn import GCNConv, GATv2Conv, GINConv, Linear, Sequential
+from typing import List, Union, Tuple, Callable
 from torch_geometric.nn.norm import BatchNorm, LayerNorm
 from torchmetrics import (
     Specificity,
@@ -141,7 +146,19 @@ class GATv2Lightning(pl.LightningModule):
         super(GATv2Lightning, self).__init__()
         assert n_classes > 1, "n_classes must be greater than 1"
         self.classification_mode = "multiclass" if n_classes > 2 else "binary"
-
+        assert activation in [
+            "leaky_relu",
+            "relu",
+        ], 'activation must be either "leaky_relu" or "relu"'
+        assert norm_method in [
+            "batch_norm",
+            "layer_norm",
+        ], 'norm_method must be either "batch_norm" or "layer_norm"'
+        assert pooling_method in [
+            "mean",
+            "max",
+            "add",
+        ], "pooling_method must be either 'mean', 'max', or 'add'"
         act_fn = (
             nn.LeakyReLU(slope, inplace=True)
             if activation == "leaky_relu"
@@ -154,14 +171,15 @@ class GATv2Lightning(pl.LightningModule):
         )
         dropout_layer = nn.Dropout(dropout)
         classifier_out_neurons = n_classes if n_classes > 2 else 1
-        self.feature_extractor = nn.Sequential()
+        feature_extractor_list: List[
+            Union[Tuple[Callable, str], Callable]
+        ] = []
         for i in range(n_gat_layers):
-            if i == 0:
-                self.feature_extractor.add_module(
-                    "gat_{}".format(i),
+            feature_extractor_list.append(
+                (
                     GATv2Conv(
-                        in_features,
-                        hidden_dim,
+                        in_features if i == 0 else hidden_dim * n_heads,
+                        hidden_dim,  # / (2**i) if i != 0 else hidden_dim,
                         heads=n_heads,
                         negative_slope=slope,
                         dropout=dropout,
@@ -169,24 +187,14 @@ class GATv2Lightning(pl.LightningModule):
                         improved=True,
                         edge_dim=1,
                     ),
+                    "x, edge_index, edge_attr -> x",
                 )
-
-            else:
-                self.feature_extractor.add_module(
-                    "gat_{}".format(i),
-                    GATv2Conv(
-                        hidden_dim * n_heads,
-                        hidden_dim,
-                        heads=n_heads,
-                        negative_slope=slope,
-                        dropout=dropout,
-                        add_self_loops=True,
-                        improved=True,
-                        edge_dim=1,
-                    ),
-                )
-            self.feature_extractor.add_module(norm_layer)
-            self.feature_extractor.add_module(act_fn)
+            )
+            feature_extractor_list.append(norm_layer)
+            feature_extractor_list.append(act_fn)
+        self.feature_extractor = Sequential(
+            "x, edge_index, edge_attr", feature_extractor_list
+        )
 
         self.classifier = nn.Sequential(
             Linear(
@@ -204,9 +212,12 @@ class GATv2Lightning(pl.LightningModule):
             ),
         )
 
-        self.pooling_method = pooling_method
-        if pooling_method == "attention":
-            self.sag_pool = SAGPooling(hidden_dim * n_heads, ratio=0.5)
+        if pooling_method == "mean":
+            self.pooling_method = global_mean_pool
+        elif pooling_method == "max":
+            self.pooling_method = global_max_pool
+        elif pooling_method == "add":
+            self.pooling_method = global_add_pool
         self.n_classes = n_classes
         self.fft_mode = fft_mode
         self.lr = lr
@@ -220,25 +231,21 @@ class GATv2Lightning(pl.LightningModule):
                 task="multiclass", num_classes=n_classes, threshold=0.5
             )
             self.auroc = AUROC(task="multiclass", num_classes=n_classes)
-        else:
+        elif self.classification_mode == "binary":
             self.loss = nn.BCEWithLogitsLoss()
             self.recall = Recall(task="binary", threshold=0.5)
             self.specificity = Specificity(task="binary", threshold=0.5)
             self.auroc = AUROC(task="binary")
-        self.training_step_outputs = []
-        self.training_step_gt = []
-        self.validation_step_outputs = []
-        self.validation_step_gt = []
-        self.test_step_outputs = []
-        self.test_step_gt = []
+        self.training_step_outputs: List[torch.Tensor] = []
+        self.training_step_gt: List[torch.Tensor] = []
+        self.validation_step_outputs: List[torch.Tensor] = []
+        self.validation_step_gt: List[torch.Tensor] = []
+        self.test_step_outputs: List[torch.Tensor] = []
+        self.test_step_gt: List[torch.Tensor] = []
 
     def forward(self, x, edge_index, pyg_batch, edge_attr=None):
         h = self.feature_extractor(x, edge_index=edge_index, edge_attr=None)
-        h = (
-            global_mean_pool(h, pyg_batch)
-            if self.pooling_method == "mean"
-            else self.sag_pool(h, pyg_batch)
-        )
+        h = self.pooling_method(h, pyg_batch)
         h = self.classifier(h)
         return h.squeeze(1)
 
