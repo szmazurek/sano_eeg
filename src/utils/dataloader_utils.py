@@ -814,6 +814,7 @@ class HDFDatasetLoader(InMemoryDataset):
         if self.loso_subject is not None:
             self.patient_list.remove(self.loso_subject)
         self._determine_sample_count()
+        self._determine_label_count()
         self._get_mean_std()
         return None
 
@@ -834,6 +835,21 @@ class HDFDatasetLoader(InMemoryDataset):
             f"Logger initialized. Logs saved to logs/hdf_dataloader_{start_time}.log"
         )
         return None
+
+    def _determine_label_count(self) -> None:
+        """Method to determine number of samples in each class."""
+        with h5py.File(self.hdf_data_path, "r") as hdf5_file:
+            for patient in self.patient_list:
+                try:
+                    labels = np.concatenate(
+                        [labels, hdf5_file[patient]["labels"][:]]
+                    )
+                except NameError:
+                    labels = hdf5_file[patient]["labels"][:]
+        self.logger.info(f"Num samples {labels.shape[0]}")
+        self.logger.info(
+            f"Class count {np.unique(labels, return_counts=True)}"
+        )
 
     def _determine_sample_count(self) -> None:
         """Method to determine number of samples in the dataset. the values are later used to
