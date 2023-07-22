@@ -168,13 +168,25 @@ def loso_training():
         valid_dataset = GraphDataset(valid_ds_path)
         loso_dataset = GraphDataset(loso_ds_path)
         train_dataloader = DataLoader(
-            train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0
+            train_dataset,
+            batch_size=BATCH_SIZE,
+            shuffle=True,
+            num_workers=0,
+            drop_last=False,
         )
         valid_dataloader = DataLoader(
-            valid_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0
+            valid_dataset,
+            batch_size=BATCH_SIZE,
+            shuffle=False,
+            num_workers=0,
+            drop_last=False,
         )
         loso_dataloader = DataLoader(
-            loso_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0
+            loso_dataset,
+            batch_size=BATCH_SIZE,
+            shuffle=False,
+            num_workers=0,
+            drop_last=False,
         )
 
         wandb.init(
@@ -279,9 +291,6 @@ def kfold_cval():
         [label_array, patient_id_array], axis=1
     )
     wandb.init(
-        project="validation_sano_eeg",
-        group=EXP_NAME,
-        name="Arch search 1",
         config=INITIAL_CONFIG,
     )
     CONFIG = wandb.config
@@ -307,13 +316,16 @@ def kfold_cval():
         test_data = [full_dataset[idx] for idx in test_idx]
 
         train_dataloader = DataLoader(
-            train_dataset, batch_size=BATCH_SIZE, shuffle=True
+            train_dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=False
         )
         valid_dataloader = DataLoader(
-            valid_dataset, batch_size=BATCH_SIZE, shuffle=False
+            valid_dataset,
+            batch_size=BATCH_SIZE,
+            shuffle=False,
+            drop_last=False,
         )
         test_dataloader = DataLoader(
-            test_data, batch_size=BATCH_SIZE, shuffle=False
+            test_data, batch_size=BATCH_SIZE, shuffle=False, drop_last=False
         )
 
         device_name = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -345,7 +357,6 @@ def kfold_cval():
         )
         n_classes = sum(USED_CLASSES_DICT.values())
         features_shape = train_dataset[0].x.shape[-1]
-        print(CONFIG.keys())
         model = GATv2Lightning(
             features_shape,
             n_classes=n_classes,
