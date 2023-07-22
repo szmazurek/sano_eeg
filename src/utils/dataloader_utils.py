@@ -458,6 +458,15 @@ class HDFDataset_Writer:
             samples_per_recording = int(
                 self.preictal_samples_dict[patient] / len(recording_list)
             )
+            self.logger.info(
+                f"Samples per recording {patient} {samples_per_recording}"
+            )
+            self.logger.info(
+                f"Number of recordings for patient {patient} {len(recording_list)}"
+            )
+            self.logger.info(
+                f"Preictal samples for patient {patient} {self.preictal_samples_dict[patient]}"
+            )
         else:
             samples_per_recording = int(samples_patient / len(recording_list))
 
@@ -653,6 +662,9 @@ class HDFDataset_Writer:
                 self._multiprocess_seizure_period_data_loading()
                 self.logger.info("Seizure period data loaded.")
                 self.logger.info(self.preictal_samples_dict)
+                self.logger.info(
+                    f"Preictal sample count {sum(self.preictal_samples_dict.values())}"
+                )
                 self._multiprocess_interictal_data_loading()
                 self.logger.info("Interictal data loaded.")
 
