@@ -122,7 +122,9 @@ def reorder_channels_chbmit(raw):
         ch_map[old_name] = current_order[n]
     raw.rename_channels(ch_map)
     raw.reorder_channels(ch_demanded_order)
-    montage = mne.channels.read_custom_montage(Path("data/chb_mit_ch_locs.loc"))
+    montage = mne.channels.read_custom_montage(
+        Path("data/chb_mit_ch_locs.loc")
+    )
     raw.set_montage(montage)
     return None
 
@@ -301,7 +303,9 @@ def preprocess_dataset_all(
                         preprocessed_dirpath, folder, "seizures_" + file
                     )
                 else:
-                    save_path = os.path.join(preprocessed_dirpath, folder, file)
+                    save_path = os.path.join(
+                        preprocessed_dirpath, folder, file
+                    )
                 if not os.path.exists(os.path.split(save_path)[0]):
                     os.mkdir(os.path.split(save_path)[0])
                 mne.export.export_raw(save_path, raw_instance, fmt="edf")
@@ -332,6 +336,7 @@ def prepare_timestep_label(array, timestep, overlap):
 
 def extract_training_data_and_labels_interictal(
     input_array,
+    patient,
     samples_per_recording: int = 10,  # number of samples per recording
     fs: int = 256,
     timestep: int = 10,  # in seconds
@@ -344,14 +349,16 @@ def extract_training_data_and_labels_interictal(
         min_samples = samples_per_recording * fs * timestep
 
     else:
-        min_samples = samples_per_recording * (timestep - overlap) + overlap
-        min_samples = min_samples * fs
-    logging.info(f"Min needed samples: {min_samples}")
+        min_samples = (samples_per_recording - 1) * (
+            timestep - overlap
+        ) + timestep
 
-    logging.info(f"Min needed samples: {min_samples}")
-    logging.info(f"Total samples: {total_samples}")
+        min_samples = min_samples * fs
+    logging.info(f"Min needed samples {patient}: {min_samples}")
+    logging.info(f"Total samples {patient}: {total_samples}")
+    logging.info(f"Not fs {patient}: {min_samples/fs}")
     logging.info(
-        f"Samples per recording to be extracted: {samples_per_recording}"
+        f"Samples per recording to be extracted {patient}: {samples_per_recording}"
     )
     # if max_samples < samples_per_recording * fs * timestep:
     #     raise ValueError("Not enough samples in the recording.")
@@ -359,15 +366,14 @@ def extract_training_data_and_labels_interictal(
     interictal_period = input_array[
         :,
         :,
-        random_start_time : random_start_time
-        + samples_per_recording * fs * timestep,
+        random_start_time : random_start_time + min_samples,
     ]
     final_array = prepare_timestep_array(
         interictal_period, timestep * fs, overlap * fs
     )
 
     labels = np.full([final_array.shape[0]], label_value)
-
+    logging.info(f"Final array shape {patient}: {final_array.shape}")
     return final_array, labels
 
 
@@ -386,7 +392,9 @@ def extract_training_data_and_labels(
     for n, start_ev in enumerate(start_ev_array):
         seizure_lookback = seizure_lookback
 
-        prev_event_time = start_ev - stop_ev_array[n - 1] if n > 0 else start_ev
+        prev_event_time = (
+            start_ev - stop_ev_array[n - 1] if n > 0 else start_ev
+        )
 
         if (
             prev_event_time > seizure_lookback + buffer_time

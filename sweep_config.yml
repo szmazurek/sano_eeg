@@ -1,0 +1,61 @@
+entity: mazurek
+project: sano_arch_search
+program: src/train.py
+method: bayes
+metric:
+  name: kfold_final_loss
+  goal: minimize
+parameters:
+  lr:
+    min: 0.0001
+    max: 0.1
+  n_heads:
+    min: 1
+    max: 12
+  n_gat_layers:
+    min: 1
+    max: 4
+  pooling_method:
+    values: ['mean', 'max', 'min']
+  norm_method:
+    values: ['batch', 'layer']
+  dropout:
+    values: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5,0.6]
+  weight_decay:
+    min: 0.0001
+    max: 0.1
+  activation:
+    values: ['relu', 'leaky_relu']
+  slope:
+    min: 0.01
+    max: 0.1
+command:
+  - srun
+  - python
+  - src/train.py
+  - --fft
+  - --batch_size 
+  - 1024
+  - --connectivity_metric
+  - plv
+  - --inter_overlap
+  - 5
+  - --preictal_overlap
+  - 5
+  - --ictal_overlap
+  - 5
+  - --timestep
+  - 6
+  - --epochs
+  - 100
+  - --use_preictal_periods
+  - --use_ictal_periods
+  - --use_interictal_periods
+  - --npy_data_dir
+  - data/npy_data_full
+  - --event_tables_dir
+  - data/event_tables
+  - --cache_dir
+  - data/cache
+
+# --batch_size 256 --exp_name trial_runs  --connectivity_metric "plv" --train_test_split 0.1 --inter_overlap 0 --preictal_overlap 8 --ictal_overlap 8 --timestep 9 --epochs 50 --use_preictal_periods --use_ictal_periods --npy_data_dir 'data/npy_data_full' --event_tables_dir 'data/event_tables' --cache_dir 'data/cache' 

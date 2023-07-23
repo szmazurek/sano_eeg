@@ -479,6 +479,7 @@ class HDFDataset_Writer:
                     labels,
                 ) = utils.extract_training_data_and_labels_interictal(
                     input_array=data_array,
+                    patient=patient,
                     samples_per_recording=samples_per_recording,
                     fs=self.sampling_f,
                     timestep=self.sample_timestep,
