@@ -8,15 +8,16 @@ import numpy as np
 import torch
 import torch_geometric
 from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.utils.class_weight import compute_class_weight
 from torch_geometric.loader import DataLoader
 
 import wandb
+from models import GATv2Lightning
 from utils.dataloader_utils import (
+    GraphDataset,
     HDFDataset_Writer,
     HDFDatasetLoader,
-    GraphDataset,
 )
-from models import GATv2Lightning
 
 warnings.filterwarnings(
     "ignore", ".*does not have many workers.*"
@@ -29,7 +30,7 @@ api_key_file.close()
 os.environ["WANDB_API_KEY"] = API_KEY
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 torch.backends.cudnn.benchmark = False
-
+torch.set_float32_matmul_precision("medium")
 parser = ArgumentParser()
 parser.add_argument("--timestep", type=int, default=6)
 parser.add_argument("--ictal_overlap", type=int, default=0)
@@ -224,6 +225,15 @@ def loso_training():
             callbacks=callbacks,
         )
         CONFIG = wandb.config
+        train_labels = torch.cat([data.y for data in train_dataset])
+        label_properties = torch.unique(train_labels, return_counts=True)
+        class_weight = torch.from_numpy(
+            compute_class_weight(
+                "balanced",
+                classes=label_properties[0].numpy(),
+                y=train_labels.numpy(),
+            )
+        ).float()
         n_classes = sum(USED_CLASSES_DICT.values())
         features_shape = train_dataset[0].x.shape[-1]
         model = GATv2Lightning(
@@ -235,11 +245,12 @@ def loso_training():
             slope=CONFIG.slope,
             dropout=CONFIG.dropout,
             pooling_method=CONFIG.pooling_method,
-            activation=CONFIG.activation,
+            activation="relu",  # CONFIG.activation,
             norm_method=CONFIG.norm_method,
             lr=CONFIG.lr,
             weight_decay=CONFIG.weight_decay,
             fft_mode=FFT,
+            class_weights=class_weight,
         )
         trainer.fit(model, train_dataloader, valid_dataloader)
         trainer.test(model, loso_dataloader, ckpt_path="best")
@@ -318,6 +329,7 @@ def kfold_cval():
         train_dataloader = DataLoader(
             train_dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=False
         )
+
         valid_dataloader = DataLoader(
             valid_dataset,
             batch_size=BATCH_SIZE,
@@ -328,6 +340,17 @@ def kfold_cval():
             test_data, batch_size=BATCH_SIZE, shuffle=False, drop_last=False
         )
 
+        train_labels = torch.cat([data.y for data in train_dataset])
+        label_properties = torch.unique(train_labels, return_counts=True)
+        class_weight = torch.from_numpy(
+            compute_class_weight(
+                "balanced",
+                classes=label_properties[0].numpy(),
+                y=train_labels.numpy(),
+            )
+        ).float()
+        n_classes = sum(USED_CLASSES_DICT.values())
+        features_shape = train_dataset[0].x.shape[-1]
         device_name = "cuda:0" if torch.cuda.is_available() else "cpu"
         precision = "bf16-mixed" if device_name == "cpu" else "16-mixed"
         strategy = pl.strategies.SingleDeviceStrategy(device=device_name)
@@ -354,9 +377,9 @@ def kfold_cval():
             enable_model_summary=False,
             logger=wandb_logger,
             callbacks=callbacks,
+            gradient_clip_val=1,
         )
-        n_classes = sum(USED_CLASSES_DICT.values())
-        features_shape = train_dataset[0].x.shape[-1]
+
         model = GATv2Lightning(
             features_shape,
             n_classes=n_classes,
@@ -367,11 +390,13 @@ def kfold_cval():
             dropout=CONFIG.dropout,
             pooling_method=CONFIG.pooling_method,
             activation=CONFIG.activation,
-            norm_method=CONFIG.norm_method,
+            #   norm_method=CONFIG.norm_method,
             lr=CONFIG.lr,
             weight_decay=CONFIG.weight_decay,
             fft_mode=FFT,
+            class_weights=class_weight,
         )
+        #    wandb_logger.watch(model)
         trainer.fit(model, train_dataloader, valid_dataloader)
         eval_results = trainer.test(model, test_dataloader, ckpt_path="best")[
             0

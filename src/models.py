@@ -142,6 +142,7 @@ class GATv2Lightning(pl.LightningModule):
         fft_mode: bool = False,
         lr=0.00001,
         weight_decay=0.0001,
+        class_weights=None,
     ):
         super(GATv2Lightning, self).__init__()
         assert n_classes > 1, "n_classes must be greater than 1"
@@ -149,16 +150,19 @@ class GATv2Lightning(pl.LightningModule):
         assert activation in [
             "leaky_relu",
             "relu",
-        ], 'activation must be either "leaky_relu" or "relu"'
+        ], 'Activation must be either "leaky_relu" or "relu"'
         assert norm_method in [
             "batch",
             "layer",
-        ], 'norm_method must be either "batch" or "layer"'
+        ], 'Norm_method must be either "batch" or "layer"'
         assert pooling_method in [
             "mean",
             "max",
             "add",
-        ], "pooling_method must be either 'mean', 'max', or 'add'"
+        ], "Pooling_method must be either 'mean', 'max', or 'add'"
+        assert (
+            len(class_weights) == n_classes
+        ), "Number of class weights must match number of classes"
         act_fn = (
             nn.LeakyReLU(slope, inplace=True)
             if activation == "leaky_relu"
@@ -222,8 +226,11 @@ class GATv2Lightning(pl.LightningModule):
         self.fft_mode = fft_mode
         self.lr = lr
         self.weight_decay = weight_decay
+        if class_weights is None:
+            class_weights = torch.ones(n_classes)
+        self.class_weights = class_weights
         if self.classification_mode == "multiclass":
-            self.loss = nn.CrossEntropyLoss()
+            self.loss = nn.CrossEntropyLoss(weight=class_weights)
             self.recall = Recall(
                 task="multiclass", num_classes=n_classes, threshold=0.5
             )

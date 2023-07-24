@@ -30,6 +30,7 @@ from mne_features.univariate import (
 )
 from scipy.signal import resample
 from scipy.stats import iqr
+import scipy.signal as signal
 from sklearn.model_selection import train_test_split
 import gc
 import utils.utils as utils
@@ -826,7 +827,7 @@ class HDFDatasetLoader(InMemoryDataset):
             ].shape[1:]
         if self.loso_subject is not None:
             self.patient_list.remove(self.loso_subject)
-        self._determine_sample_count()
+        #  self._determine_sample_count()
         self._determine_label_count()
         self._get_mean_std()
         return None
@@ -937,13 +938,9 @@ class HDFDatasetLoader(InMemoryDataset):
             )[0]
             self.median = np.median(features_all[idx])
             self.scale = iqr(features_all[idx])
-            # self.data_mean = np.mean(features_all[idx])
-            # self.data_std = np.std(features_all[idx])
-            # self.logger.info(f"Mean {self.data_mean}")
-            # self.logger.info(f"Std {self.data_std}")
         else:
-            self.data_mean = np.mean(features_all)
-            self.data_std = np.std(features_all)
+            self.median = np.median(features_all)
+            self.scale = iqr(features_all)
 
         del features_all, labels_all
         gc.collect()
@@ -1033,6 +1030,39 @@ class HDFDatasetLoader(InMemoryDataset):
 
         return new_features, new_labels, new_idx
 
+    def _compute_energy_freq_bands(self, input_signal, sfreq, freq_bands):
+        """
+        Compute energy of a signal on given channel for every provided frequency band.
+
+        Parameters:
+            input_signal (numpy array): Input signal of shape (n_samples, n_channels, features).
+            sfreq (float): Sampling frequency of the input signal.
+            freq_bands (list of tuples): List of frequency bands in the form of (lower_freq, upper_freq).
+
+        Returns:
+            numpy array: Array of shape (n_samples, n_channels, energy_f_band) containing the energy of each channel
+                        in each provided frequency band for each sample.
+        """
+        n_samples, n_channels, features = input_signal.shape
+        n_freq_bands = len(freq_bands)
+        energy_f_band = np.empty((n_samples, n_channels, n_freq_bands))
+
+        for i in range(n_channels):
+            for j, (lower_freq, upper_freq) in enumerate(freq_bands):
+                # Compute the bandpass filtered signal
+                b, a = signal.butter(
+                    4,
+                    [lower_freq / (sfreq / 2), upper_freq / (sfreq / 2)],
+                    btype="band",
+                )
+                filtered_signal = signal.filtfilt(b, a, input_signal[:, i, :])
+
+                # Compute energy (sum of squared values) in the frequency band
+                energy_f_band[:, i, j] = np.log(
+                    np.sum(filtered_signal**2, axis=1)
+                )
+        return energy_f_band
+
     def _calculate_timeseries_features(
         self, features: np.ndarray
     ) -> np.ndarray:
@@ -1042,7 +1072,7 @@ class HDFDatasetLoader(InMemoryDataset):
         Returns:
             new_features: (np.ndarray) Array with Hjorth features.
         """
-
+        FREQ_BANDS = [(0.5, 4), (4, 8), (8, 13), (13, 29)]
         new_features = np.array(
             [
                 np.concatenate(
@@ -1053,15 +1083,16 @@ class HDFDatasetLoader(InMemoryDataset):
                         np.expand_dims(compute_line_length(feature), 1),
                         np.expand_dims(compute_katz_fd(feature), 1),
                         np.expand_dims(compute_higuchi_fd(feature), 1),
-                        compute_energy_freq_bands(
-                            self.sampling_f, feature, self.FREQ_BANDS
-                        ).reshape(self.n_channels, self.BAND_COUNT),
                     ],
                     axis=1,
                 )
                 for feature in features
             ]
         )
+        band_energies = self._compute_energy_freq_bands(
+            features, self.sampling_f, FREQ_BANDS
+        )
+        new_features = np.concatenate([new_features, band_energies], axis=2)
 
         return new_features
 
@@ -1268,9 +1299,9 @@ class HDFDatasetLoader(InMemoryDataset):
         self.logger.info(
             f"Processed patient {patient} for train and validation sets."
         )
-        # self.logger.info(
-        #     f"Reading patient {patient}, Virtual memory {psutil.virtual_memory()}"
-        # )
+        self.logger.info(
+            f"Reading patient {patient}, Virtual memory {psutil.virtual_memory()}"
+        )
         self.logger.info(
             f"End logging of memory: {meminfo_table} for {patient}"
         )
@@ -1287,6 +1318,8 @@ class HDFDatasetLoader(InMemoryDataset):
         Returns:
             train_data_list: (list) List of torch_geometric.data.Data objects for training.
         """
+
+        pid = os.getpid()
         patient_id = (
             int("".join(filter(str.isdigit, patient)))
             if self.kfold_cval_mode
@@ -1303,7 +1336,11 @@ class HDFDatasetLoader(InMemoryDataset):
             data_list = self._features_to_data_list(
                 features, edge_idx, labels, patient_id
             )
+        del features, labels, edge_idx
+        gc.collect()
         data, slices = self.collate(data_list)
+        del data_list
+        gc.collect()
         if patient == self.loso_subject:
             savepath = os.path.join(
                 self.processed_file_paths[-1], f"{patient}.pt"
@@ -1313,9 +1350,15 @@ class HDFDatasetLoader(InMemoryDataset):
                 self.processed_file_paths[0], f"{patient}.pt"
             )
         torch.save((data, slices), savepath)
-
+        meminfo_table = self._get_mem_info(pid)
         self.logger.info(f"Processed patient {patient} set.")
-        return data_list
+        self.logger.info(
+            f"Reading patient {patient}, Virtual memory {psutil.virtual_memory()}"
+        )
+        self.logger.info(
+            f"End logging of memory: {meminfo_table} for {patient}"
+        )
+        return None
 
     def get_datasets(
         self,
