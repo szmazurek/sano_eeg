@@ -3,8 +3,8 @@ project: sano_arch_search
 program: src/train.py
 method: bayes
 metric:
-  name: kfold_final_loss
-  goal: minimize
+  name: final_mean_AUROC
+  goal: maximize
 parameters:
   lr:
     min: 0.0001
@@ -38,11 +38,11 @@ command:
   - --connectivity_metric
   - plv
   - --inter_overlap
-  - 5
+  - 0
   - --preictal_overlap
-  - 5
+  - 0
   - --ictal_overlap
-  - 5
+  - 0
   - --timestep
   - 6
   - --epochs
@@ -56,6 +56,7 @@ command:
   - data/event_tables
   - --cache_dir
   - data/cache
-  - --kfold_cval_mode
-  - --fft
+  - --train_test_split
+  - 0.1
+  - --mne_features
 

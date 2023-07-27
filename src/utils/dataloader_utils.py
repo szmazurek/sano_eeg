@@ -728,7 +728,8 @@ class HDFDatasetLoader(InMemoryDataset):
     kfold_cval_mode: bool = False
 
     def _create_paths(self) -> List[str]:
-        main_root_dir = os.path.join(self.root, "processed_cache")
+        date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        main_root_dir = os.path.join(self.root, date)
         try:
             if not len(os.listdir(main_root_dir)) == 0:
                 shutil.rmtree(main_root_dir)
@@ -1411,13 +1412,13 @@ class GraphDataset:
         self.object_paths = [
             os.path.join(root, path) for path in os.listdir(root)
         ]
-        self.root = root
-        self.load()
+        self.root = root.rstrip("/")
+        self._load()
 
     def __len__(self) -> int:
         return len(self._data_list) if self._data_list is not None else 0
 
-    def load(self) -> None:
+    def _load(self) -> None:
         data, slices = zip(*[torch.load(path) for path in self.object_paths])
         data_list = []
         for n in range(len(data)):
@@ -1428,7 +1429,11 @@ class GraphDataset:
                 for index in range(len(data_temp.y))
             ]
         self._data_list = data_list
-        print(len(self._data_list))
+
+    def clear_cache(self) -> None:
+        main_root_dir = os.path.dirname(self.root)
+        shutil.rmtree(main_root_dir)
+        return None
 
     def __getitem__(self, idx: int) -> Data:
         return self._data_list[idx]

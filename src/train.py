@@ -10,7 +10,7 @@ import torch_geometric
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.utils.class_weight import compute_class_weight
 from torch_geometric.loader import DataLoader
-
+from statistics import mean, stdev
 import wandb
 from models import GATv2Lightning
 from utils.dataloader_utils import (
@@ -65,6 +65,7 @@ parser.add_argument(
 )
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--kfold_cval_mode", action="store_true", default=False)
+parser.add_argument("--n_splits", type=int, default=5)
 
 args = parser.parse_args()
 TIMESTEP = args.timestep
@@ -97,6 +98,7 @@ BUFFER_TIME = args.buffer_time
 CACHE_DIR = args.cache_dir
 SEED = args.seed
 KFOLD_CVAL_MODE = args.kfold_cval_mode
+N_SPLITS = args.n_splits
 INITIAL_CONFIG = dict(
     timestep=TIMESTEP,
     inter_overlap=INTER_OVERLAP,
@@ -118,21 +120,25 @@ INITIAL_CONFIG = dict(
     train_val_split=TRAIN_VAL_SPLIT,
     connectivity_metric=CONNECTIVITY_METRIC,
     seed=SEED,
-    n_gat_layers=2,
+    n_gat_layers=1,
     hidden_dim=32,
-    dropout=0.4,
-    slope=0.01,
+    dropout=0.0,
+    slope=0.00249,
     pooling_method="mean",
     norm_method="batch",
     activation="leaky_relu",
-    n_heads=4,
-    lr=0.0001,
-    weight_decay=0.0001,
+    n_heads=9,
+    lr=0.00118,
+    weight_decay=0.00777,
 )
 
 
 def loso_training():
-    for loso_patient in os.listdir(NPY_DATA_DIR):
+    wandb.init(
+        config=INITIAL_CONFIG,
+    )
+    wandb.define_metric("patient")
+    for n, loso_patient in enumerate(os.listdir(NPY_DATA_DIR)):
         writer = HDFDataset_Writer(
             seizure_lookback=SEIZURE_LOOKBACK,
             buffer_time=BUFFER_TIME,
@@ -168,6 +174,7 @@ def loso_training():
         train_dataset = GraphDataset(train_ds_path)
         valid_dataset = GraphDataset(valid_ds_path)
         loso_dataset = GraphDataset(loso_ds_path)
+        loso_dataset.clear_cache()
         train_dataloader = DataLoader(
             train_dataset,
             batch_size=BATCH_SIZE,
@@ -190,19 +197,12 @@ def loso_training():
             drop_last=False,
         )
 
-        wandb.init(
-            project="validation_sano_eeg",
-            group=EXP_NAME,
-            name=loso_patient,
-            config=INITIAL_CONFIG,
-        )
-
         device_name = "cuda:0" if torch.cuda.is_available() else "cpu"
         precision = "bf16-mixed" if device_name == "cpu" else "16-mixed"
         strategy = pl.strategies.SingleDeviceStrategy(device=device_name)
         wandb_logger = pl.loggers.WandbLogger(log_model=False)
         early_stopping = pl.callbacks.EarlyStopping(
-            monitor="val_loss", patience=6, verbose=False, mode="min"
+            monitor="val_loss", patience=10, verbose=False, mode="min"
         )
         best_checkpoint_callback = pl.callbacks.ModelCheckpoint(
             monitor="val_loss",
@@ -227,13 +227,20 @@ def loso_training():
         CONFIG = wandb.config
         train_labels = torch.cat([data.y for data in train_dataset])
         label_properties = torch.unique(train_labels, return_counts=True)
-        class_weight = torch.from_numpy(
-            compute_class_weight(
-                "balanced",
-                classes=label_properties[0].numpy(),
-                y=train_labels.numpy(),
+        if sum(CONFIG.used_classes_dict.values()) == 3:
+            """Multiclass weights"""
+            class_weight = torch.from_numpy(
+                compute_class_weight(
+                    "balanced",
+                    classes=label_properties[0].numpy(),
+                    y=train_labels.numpy(),
+                )
+            ).float()
+        else:
+            """Binary weights"""
+            class_weight = torch.tensor(
+                [label_properties[1][0] / label_properties[1][1]]
             )
-        ).float()
         n_classes = sum(USED_CLASSES_DICT.values())
         features_shape = train_dataset[0].x.shape[-1]
         model = GATv2Lightning(
@@ -245,7 +252,7 @@ def loso_training():
             slope=CONFIG.slope,
             dropout=CONFIG.dropout,
             pooling_method=CONFIG.pooling_method,
-            activation="relu",  # CONFIG.activation,
+            activation=CONFIG.activation,
             norm_method=CONFIG.norm_method,
             lr=CONFIG.lr,
             weight_decay=CONFIG.weight_decay,
@@ -253,8 +260,27 @@ def loso_training():
             class_weights=class_weight,
         )
         trainer.fit(model, train_dataloader, valid_dataloader)
-        trainer.test(model, loso_dataloader, ckpt_path="best")
-        wandb.finish()
+        eval_results = trainer.test(model, loso_dataloader, ckpt_path="best")[
+            0
+        ]
+        wandb.log(
+            {"patient": int("".join([n for n in loso_patient if n.isdigit()]))}
+        )
+        wandb.define_metric("test_loss_epoch", step_metric="patient")
+        wandb.define_metric("loso_sensitivity", step_metric="patient")
+        wandb.define_metric("loso_specificity", step_metric="patient")
+        wandb.define_metric("loso_AUROC", step_metric="patient")
+        if n == 0:
+            result_list = [eval_results["loso_AUROC"]]
+        else:
+            result_list.append(eval_results["loso_AUROC"])
+    mean_auroc = mean(result_list)
+    stdev_auroc = round(stdev(result_list), 4)
+    measured_auroc = mean_auroc * (1 / stdev_auroc)
+    wandb.log({"final_mean_AUROC": mean_auroc})
+    wandb.log({"final_stdev_AUROC": stdev_auroc})
+    wandb.log({"final_measured_AUROC": measured_auroc})
+    wandb.finish()
     return None
 
 
@@ -311,7 +337,9 @@ def kfold_cval():
     torch_device = torch.device(device)
     precision = "bf16-mixed" if device == "cpu" else "16-mixed"
     strategy = pl.strategies.SingleDeviceStrategy(device=torch_device)
-    kfold = StratifiedShuffleSplit(n_splits=5, test_size=0.1, random_state=42)
+    kfold = StratifiedShuffleSplit(
+        n_splits=N_SPLITS, test_size=0.1, random_state=42
+    )
     for fold, (train_idx, test_idx) in enumerate(
         kfold.split(np.zeros(len(full_dataset)), class_labels_patient_labels)
     ):
@@ -342,13 +370,20 @@ def kfold_cval():
 
         train_labels = torch.cat([data.y for data in train_dataset])
         label_properties = torch.unique(train_labels, return_counts=True)
-        class_weight = torch.from_numpy(
-            compute_class_weight(
-                "balanced",
-                classes=label_properties[0].numpy(),
-                y=train_labels.numpy(),
+        if sum(CONFIG.used_classes_dict.values()) == 3:
+            """Multiclass weights"""
+            class_weight = torch.from_numpy(
+                compute_class_weight(
+                    "balanced",
+                    classes=label_properties[0].numpy(),
+                    y=train_labels.numpy(),
+                )
+            ).float()
+        else:
+            """Binary weights"""
+            class_weight = torch.tensor(
+                [label_properties[1][0] / label_properties[1][1]]
             )
-        ).float()
         n_classes = sum(USED_CLASSES_DICT.values())
         features_shape = train_dataset[0].x.shape[-1]
         device_name = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -390,7 +425,7 @@ def kfold_cval():
             dropout=CONFIG.dropout,
             pooling_method=CONFIG.pooling_method,
             activation=CONFIG.activation,
-            #   norm_method=CONFIG.norm_method,
+            norm_method=CONFIG.norm_method,
             lr=CONFIG.lr,
             weight_decay=CONFIG.weight_decay,
             fft_mode=FFT,
@@ -412,6 +447,7 @@ def kfold_cval():
     summary_dict = {
         key: summary_dict[key] / (fold + 1) for key in summary_dict.keys()
     }
+    full_dataset.clear_cache()
     wandb.log({"kfold_final_loss": summary_dict["test_loss_epoch"]})
     wandb.finish()
     return None

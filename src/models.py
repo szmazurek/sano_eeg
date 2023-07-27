@@ -160,9 +160,14 @@ class GATv2Lightning(pl.LightningModule):
             "max",
             "add",
         ], "Pooling_method must be either 'mean', 'max', or 'add'"
-        assert (
-            len(class_weights) == n_classes
-        ), "Number of class weights must match number of classes"
+        if n_classes > 2:
+            assert (
+                len(class_weights) == n_classes
+            ), "Number of class weights must match number of classes"
+        else:
+            assert (
+                len(class_weights) == 1
+            ), "Only one class weight must be provided for binary classification"
         act_fn = (
             nn.LeakyReLU(slope, inplace=True)
             if activation == "leaky_relu"
@@ -239,7 +244,7 @@ class GATv2Lightning(pl.LightningModule):
             )
             self.auroc = AUROC(task="multiclass", num_classes=n_classes)
         elif self.classification_mode == "binary":
-            self.loss = nn.BCEWithLogitsLoss()
+            self.loss = nn.BCEWithLogitsLoss(pos_weight=class_weights)
             self.recall = Recall(task="binary", threshold=0.5)
             self.specificity = Specificity(task="binary", threshold=0.5)
             self.auroc = AUROC(task="binary")
