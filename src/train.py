@@ -17,7 +17,9 @@ from utils.dataloader_utils import (
     GraphDataset,
     HDFDataset_Writer,
     HDFDatasetLoader,
+    save_data_list,
 )
+from iterstrat.ml_stratifiers import MultilabelStratifiedKFold
 
 warnings.filterwarnings(
     "ignore", ".*does not have many workers.*"
@@ -123,13 +125,13 @@ INITIAL_CONFIG = dict(
     n_gat_layers=1,
     hidden_dim=32,
     dropout=0.0,
-    slope=0.00249,
+    slope=0.0025,
     pooling_method="mean",
     norm_method="batch",
     activation="leaky_relu",
     n_heads=9,
-    lr=0.00118,
-    weight_decay=0.00777,
+    lr=0.0012,
+    weight_decay=0.0078,
 )
 
 
@@ -327,24 +329,30 @@ def kfold_cval():
     class_labels_patient_labels = np.concatenate(
         [label_array, patient_id_array], axis=1
     )
-    wandb.init(
-        config=INITIAL_CONFIG,
-    )
-    CONFIG = wandb.config
+
     torch_geometric.seed_everything(42)
 
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     torch_device = torch.device(device)
     precision = "bf16-mixed" if device == "cpu" else "16-mixed"
     strategy = pl.strategies.SingleDeviceStrategy(device=torch_device)
-    kfold = StratifiedShuffleSplit(
-        n_splits=N_SPLITS, test_size=0.1, random_state=42
+    kfold = MultilabelStratifiedKFold(
+        n_splits=N_SPLITS, random_state=42, shuffle=True
     )
+    # kfold = StratifiedShuffleSplit(
+    #     n_splits=N_SPLITS, test_size=0.1, random_state=42
+    # )
     for fold, (train_idx, test_idx) in enumerate(
         kfold.split(np.zeros(len(full_dataset)), class_labels_patient_labels)
     ):
         print(f"Fold {fold}")
-
+        wandb.init(
+            project="sano_eeg_final_runs",
+            group=EXP_NAME,
+            name=f"fold_{fold}",
+            config=INITIAL_CONFIG,
+        )
+        CONFIG = wandb.config
         train_labels = class_labels_patient_labels[train_idx]
         splitter = StratifiedShuffleSplit(
             n_splits=1, test_size=0.1, random_state=42
@@ -353,7 +361,10 @@ def kfold_cval():
         train_dataset = [full_dataset[idx] for idx in sub_train_idx]
         valid_dataset = [full_dataset[idx] for idx in val_idx]
         test_data = [full_dataset[idx] for idx in test_idx]
-
+        test_save_data = os.path.join(
+            "saved_folds_trial", EXP_NAME, f"fold_{fold}/ data.pt"
+        )
+        save_data_list(test_data, test_save_data)
         train_dataloader = DataLoader(
             train_dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=False
         )
@@ -398,6 +409,8 @@ def kfold_cval():
             save_top_k=1,
             mode="min",
             verbose=False,
+            dirpath=f"checkpoints_final_new_strat/fold_{fold}",
+            filename="{epoch}-{val_loss:.3f}",
         )
         callbacks = [early_stopping, best_checkpoint_callback]
         trainer = pl.Trainer(
@@ -412,7 +425,6 @@ def kfold_cval():
             enable_model_summary=False,
             logger=wandb_logger,
             callbacks=callbacks,
-            gradient_clip_val=1,
         )
 
         model = GATv2Lightning(
@@ -431,25 +443,24 @@ def kfold_cval():
             fft_mode=FFT,
             class_weights=class_weight,
         )
-        #    wandb_logger.watch(model)
         trainer.fit(model, train_dataloader, valid_dataloader)
         eval_results = trainer.test(model, test_dataloader, ckpt_path="best")[
             0
         ]
-
-        if fold == 0:
-            summary_dict = eval_results
-        else:
-            summary_dict = {
-                key: summary_dict[key] + eval_results[key]
-                for key in summary_dict.keys()
-            }
-    summary_dict = {
-        key: summary_dict[key] / (fold + 1) for key in summary_dict.keys()
-    }
-    full_dataset.clear_cache()
-    wandb.log({"kfold_final_loss": summary_dict["test_loss_epoch"]})
-    wandb.finish()
+        wandb.finish()
+    #     if fold == 0:
+    #         summary_dict = eval_results
+    #     else:
+    #         summary_dict = {
+    #             key: summary_dict[key] + eval_results[key]
+    #             for key in summary_dict.keys()
+    #         }
+    # summary_dict = {
+    #     key: summary_dict[key] / (fold + 1) for key in summary_dict.keys()
+    # }
+    # full_dataset.clear_cache()
+    # wandb.log({"kfold_final_loss": summary_dict["test_loss_epoch"]})
+    # wandb.finish()
     return None
 
 

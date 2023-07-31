@@ -10,11 +10,7 @@ from torch_geometric.nn import (
 from torch_geometric.nn import GCNConv, GATv2Conv, GINConv, Linear, Sequential
 from typing import List, Union, Tuple, Callable
 from torch_geometric.nn.norm import BatchNorm, LayerNorm
-from torchmetrics import (
-    Specificity,
-    Recall,
-    AUROC,
-)
+from torchmetrics import Specificity, Recall, AUROC, F1Score
 
 
 class ClassicGCN(torch.nn.Module):
@@ -160,14 +156,15 @@ class GATv2Lightning(pl.LightningModule):
             "max",
             "add",
         ], "Pooling_method must be either 'mean', 'max', or 'add'"
-        if n_classes > 2:
-            assert (
-                len(class_weights) == n_classes
-            ), "Number of class weights must match number of classes"
-        else:
-            assert (
-                len(class_weights) == 1
-            ), "Only one class weight must be provided for binary classification"
+        if class_weights is not None:
+            if n_classes > 2:
+                assert (
+                    len(class_weights) == n_classes
+                ), "Number of class weights must match number of classes"
+            else:
+                assert (
+                    len(class_weights) == 1
+                ), "Only one class weight must be provided for binary classification"
         act_fn = (
             nn.LeakyReLU(slope, inplace=True)
             if activation == "leaky_relu"
@@ -235,6 +232,7 @@ class GATv2Lightning(pl.LightningModule):
             class_weights = torch.ones(n_classes)
         self.class_weights = class_weights
         if self.classification_mode == "multiclass":
+            self.f1_score = F1Score(task="multiclass", num_classes=n_classes)
             self.loss = nn.CrossEntropyLoss(weight=class_weights)
             self.recall = Recall(
                 task="multiclass", num_classes=n_classes, threshold=0.5
@@ -244,6 +242,7 @@ class GATv2Lightning(pl.LightningModule):
             )
             self.auroc = AUROC(task="multiclass", num_classes=n_classes)
         elif self.classification_mode == "binary":
+            self.f1_score = F1Score(task="binary", threshold=0.5)
             self.loss = nn.BCEWithLogitsLoss(pos_weight=class_weights)
             self.recall = Recall(task="binary", threshold=0.5)
             self.specificity = Specificity(task="binary", threshold=0.5)
@@ -259,7 +258,7 @@ class GATv2Lightning(pl.LightningModule):
         h = self.feature_extractor(x, edge_index=edge_index, edge_attr=None)
         h = self.pooling_method(h, pyg_batch)
         h = self.classifier(h)
-        return h.squeeze(1)
+        return h
 
     def unpack_data_batch(self, data_batch):
         x = data_batch.x
@@ -302,12 +301,13 @@ class GATv2Lightning(pl.LightningModule):
         rec = self.recall(training_step_outputs, training_step_gt)
         spec = self.specificity(training_step_outputs, training_step_gt)
         auroc = self.auroc(training_step_outputs, training_step_gt)
-
+        f1_score = self.f1_score(training_step_outputs, training_step_gt)
         self.log_dict(
             {
                 "train_sensitivity": rec,
                 "train_specificity": spec,
                 "train_AUROC": auroc,
+                "train_f1_score": f1_score,
             },
             logger=True,
             prog_bar=True,
@@ -341,11 +341,13 @@ class GATv2Lightning(pl.LightningModule):
         rec = self.recall(validation_step_outputs, validation_step_gt)
         spec = self.specificity(validation_step_outputs, validation_step_gt)
         auroc = self.auroc(validation_step_outputs, validation_step_gt)
+        f1_score = self.f1_score(validation_step_outputs, validation_step_gt)
         self.log_dict(
             {
                 "val_sensitivity": rec,
                 "val_specificity": spec,
                 "val_AUROC": auroc,
+                "val_f1_score": f1_score,
             },
             logger=True,
             prog_bar=True,
@@ -365,7 +367,7 @@ class GATv2Lightning(pl.LightningModule):
         self.log(
             "test_loss",
             loss,
-            on_step=True,
+            on_step=False,
             on_epoch=True,
             logger=True,
             prog_bar=True,
@@ -379,11 +381,13 @@ class GATv2Lightning(pl.LightningModule):
         rec = self.recall(test_step_outputs, test_step_gt)
         spec = self.specificity(test_step_outputs, test_step_gt)
         auroc = self.auroc(test_step_outputs, test_step_gt)
+        f1_score = self.f1_score(test_step_outputs, test_step_gt)
         self.log_dict(
             {
-                "loso_sensitivity": rec,
-                "loso_specificity": spec,
-                "loso_AUROC": auroc,
+                "test_sensitivity": rec,
+                "test_specificity": spec,
+                "test_AUROC": auroc,
+                "test_f1_score": f1_score,
             },
             logger=True,
             prog_bar=True,

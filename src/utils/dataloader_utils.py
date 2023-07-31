@@ -1,6 +1,8 @@
 import multiprocessing as mp
 from torch_geometric.data.separate import separate
 from torch_geometric.data import Data
+from torch_geometric.data.data import BaseData
+from torch_geometric.data.collate import collate
 import fnmatch
 import logging
 import shutil
@@ -9,7 +11,7 @@ import time
 import traceback
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Optional, Dict
 import psutil
 import h5py
 import networkx as nx
@@ -20,7 +22,6 @@ import torch_geometric
 import yaml
 from imblearn.over_sampling import SMOTE
 from mne_features.univariate import (
-    compute_energy_freq_bands,
     compute_higuchi_fd,
     compute_hjorth_complexity,
     compute_hjorth_mobility,
@@ -35,7 +36,8 @@ from sklearn.model_selection import train_test_split
 import gc
 import utils.utils as utils
 from collections import defaultdict
-from torch_geometric.data import InMemoryDataset
+
+# from torch_geometric.data import InMemoryDataset
 
 CPUS_PER_TASK = (
     int(os.environ["SLURM_CPUS_PER_TASK"])
@@ -43,6 +45,25 @@ CPUS_PER_TASK = (
     else mp.cpu_count()
 )
 CTX = mp.get_context("fork")
+
+
+def collate_datalist(
+    data_list: List[BaseData],
+) -> Tuple[BaseData, Optional[Dict[str, torch.Tensor]]]:
+    r"""Collates a Python list of :class:`~torch_geometric.data.Data` or
+    :class:`~torch_geometric.data.HeteroData` objects to the internal
+    storage format of :class:`~torch_geometric.data.InMemoryDataset`."""
+    if len(data_list) == 1:
+        return data_list[0], None
+
+    data, slices, _ = collate(
+        data_list[0].__class__,
+        data_list=data_list,
+        increment=False,
+        add_batch=False,
+    )
+
+    return data, slices
 
 
 @dataclass
@@ -688,9 +709,10 @@ class HDFDataset_Writer:
 
 
 @dataclass
-class HDFDatasetLoader(InMemoryDataset):
+class HDFDatasetLoader:
     DEFAULT_CLASS_LABELS = {"preictal": 0, "ictal": 1, "interictal": 2}
-    FREQ_BANDS = [0.5, 4, 8, 13, 29]
+    # FREQ_BANDS = [0.5, 4, 8, 13, 29]
+    FREQ_BANDS = [(0.5, 4), (4, 8), (8, 13), (13, 29)]
     BAND_COUNT = len(FREQ_BANDS) - 1
     """
     Class to load graph data from HDF5 file as lists of torch.geomtric.data.Data objects.
@@ -728,8 +750,15 @@ class HDFDatasetLoader(InMemoryDataset):
     kfold_cval_mode: bool = False
 
     def _create_paths(self) -> List[str]:
-        date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        main_root_dir = os.path.join(self.root, date)
+        date_now = datetime.now().strftime("%d.%m.%Y %H:%M:%S,%f")
+        timestep_ms = str(
+            (
+                datetime.strptime(date_now, "%d.%m.%Y %H:%M:%S,%f").timestamp()
+                * 1000
+            )
+        )
+
+        main_root_dir = os.path.join(self.root, timestep_ms)
         try:
             if not len(os.listdir(main_root_dir)) == 0:
                 shutil.rmtree(main_root_dir)
@@ -1073,7 +1102,7 @@ class HDFDatasetLoader(InMemoryDataset):
         Returns:
             new_features: (np.ndarray) Array with Hjorth features.
         """
-        FREQ_BANDS = [(0.5, 4), (4, 8), (8, 13), (13, 29)]
+
         new_features = np.array(
             [
                 np.concatenate(
@@ -1091,7 +1120,7 @@ class HDFDatasetLoader(InMemoryDataset):
             ]
         )
         band_energies = self._compute_energy_freq_bands(
-            features, self.sampling_f, FREQ_BANDS
+            features, self.sampling_f, self.FREQ_BANDS
         )
         new_features = np.concatenate([new_features, band_energies], axis=2)
 
@@ -1275,8 +1304,8 @@ class HDFDatasetLoader(InMemoryDataset):
             features_val, edge_idx_val, labels_val
         )
 
-        data_list_train, slices_train = self.collate(data_list_train)
-        data_list_val, slices_val = self.collate(data_list_val)
+        data_list_train, slices_train = collate_datalist(data_list_train)
+        data_list_val, slices_val = collate_datalist(data_list_val)
         savepath_train = os.path.join(
             self.processed_file_paths[0], f"{patient}.pt"
         )
@@ -1339,7 +1368,7 @@ class HDFDatasetLoader(InMemoryDataset):
             )
         del features, labels, edge_idx
         gc.collect()
-        data, slices = self.collate(data_list)
+        data, slices = collate_datalist(data_list)
         del data_list
         gc.collect()
         if patient == self.loso_subject:
@@ -1413,6 +1442,7 @@ class GraphDataset:
             os.path.join(root, path) for path in os.listdir(root)
         ]
         self.root = root.rstrip("/")
+        print(self.root)
         self._load()
 
     def __len__(self) -> int:
@@ -1437,3 +1467,11 @@ class GraphDataset:
 
     def __getitem__(self, idx: int) -> Data:
         return self._data_list[idx]
+
+
+def save_data_list(data_list: List[Data], path: str) -> None:
+    if not os.path.exists(os.path.dirname(path)):
+        os.makedirs(os.path.dirname(path))
+    data, slices = collate_datalist(data_list)
+    torch.save((data, slices), path)
+    return None
