@@ -1,4 +1,4 @@
-sano_env/
+sano_venv/
 __pycache__
 npy_data/
 data/
@@ -8,3 +8,12 @@ lightning_logs/
 *.err
 *.out
 *.sh
+wandb_api_key.txt
+*.pt
+*env
+*log
+.vscode
+*cache*
+wandb/
+
+checkpoints*/
