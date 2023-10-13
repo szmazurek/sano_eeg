@@ -17,3 +17,11 @@ sweep_config.yaml. To run the sweep please modify the parameters, such as <br>
 entity or model configuration.
 6. To run explainability notebook, please follow the instructions in the notebook <br>
 named explainability.ipynb.
+
+Publications based on this work: <br>
+
+Mazurek, S., Blanco, R., Falcó-Roget, J., Argasiński, J.K., Crimi, A. (2023). <br> 
+Impact of the Pre-processing and Balancing of EEG Data on the Performance of Graph Neural Network for Epileptic Seizure Classification.<br>
+In: Rutkowski, L., Scherer, R., Korytkowski, M., Pedrycz, W., Tadeusiewicz, R., Zurada, J.M. (eds) <br>
+Artificial Intelligence and Soft Computing. ICAISC 2023. Lecture Notes in Computer Science(), vol 14126. Springer, Cham. <br>
+https://doi.org/10.1007/978-3-031-42508-0_24
