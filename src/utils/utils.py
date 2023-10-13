@@ -3,17 +3,16 @@ import re
 import os
 import scipy
 import timeit
+import logging
+import torch
 import pandas as pd
 import numpy as np
 from pathlib import Path
+from typing import Union
 from sklearn.decomposition import PCA
 from mne_features.bivariate import compute_phase_lock_val, compute_spect_corr
-from typing import Union
-import logging
-
-
-# from mne_icalabel import label_components
-# from pyprep.prep_pipeline import PrepPipeline
+from mne_icalabel import label_components
+from pyprep.prep_pipeline import PrepPipeline
 from mne.preprocessing import ICA
 
 
@@ -100,19 +99,13 @@ def remove_channels_duplicate(ch_name):
 
 def remove_repeating_pairs(cleared_ch_names):
     repeating_chs = []
-    for pair in cleared_ch_names:
-        temp_ch_pairs = cleared_ch_names.copy()
-        temp_ch_pairs.remove(pair)
-        try:
-            ch_1, ch_2 = pair.split(sep="-")
-        except ValueError:
-            ch_1, ch_2, ch_3 = pair.split(sep="-")
-        for pair_2 in temp_ch_pairs:
-            num_of_same_chs = pair_2.count(ch_1) + pair_2.count(ch_2)
-            if num_of_same_chs > 1:
+    for i, pair in enumerate(cleared_ch_names):
+        for pair_2 in cleared_ch_names[i + 1 :]:
+            if set(pair.split("-")) == set(pair_2.split("-")):
                 repeating_chs.append(pair_2)
+                break
 
-    return repeating_chs[0]  # not so good function!
+    return repeating_chs[0] if repeating_chs else None
 
 
 def reorder_channels_chbmit(raw):
@@ -122,9 +115,7 @@ def reorder_channels_chbmit(raw):
         ch_map[old_name] = current_order[n]
     raw.rename_channels(ch_map)
     raw.reorder_channels(ch_demanded_order)
-    montage = mne.channels.read_custom_montage(
-        Path("data/chb_mit_ch_locs.loc")
-    )
+    montage = mne.channels.read_custom_montage(Path("data/chb_mit_ch_locs.loc"))
     raw.set_montage(montage)
     return None
 
@@ -168,9 +159,7 @@ def run_preprocessing(
         ica.fit(raw)
         ic_labels = label_components(raw, ica, method="iclabel")
         labels = np.array(ic_labels["labels"])
-        ica.exclude = np.where((labels != "other") & (labels != "brain"))[
-            0
-        ].tolist()
+        ica.exclude = np.where((labels != "other") & (labels != "brain"))[0].tolist()
         ica.apply(raw)
 
     elif apply_pca:
@@ -220,9 +209,7 @@ def load_and_dump_channels(filepath):
         channel_ordering = current_channels[:-n_chs_to_drop]
         data_raw.reorder_channels(channel_ordering)
     if len(current_channels) < 18:
-        print(
-            f"Too few channels to processd, found {len(current_channels)}. Skipping."
-        )
+        print(f"Too few channels to processd, found {len(current_channels)}. Skipping.")
         return None
     return data_raw
 
@@ -241,8 +228,7 @@ def preprocess_dataset_seizures(
 
     """
     subjects_with_seizures = [
-        subject[:-1]
-        for subject in open(subjects_with_seizures_path, "r").readlines()
+        subject[:-1] for subject in open(subjects_with_seizures_path, "r").readlines()
     ]
     for subject in subjects_with_seizures:
         try:
@@ -255,8 +241,9 @@ def preprocess_dataset_seizures(
             continue
 
         reorder_channels_chbmit(raw_file)
-        # THIS SHOULD BE PARAMETRIZED AS KWARGS
-        # raw_instance = run_preprocessing(raw_file, apply_pca=False,avg_ref=True, freq_l=0.5, freq_h=30.0)
+        raw_instance = run_preprocessing(
+            raw_file, apply_pca=True, avg_ref=True, freq_l=0.5, freq_h=30.0
+        )
         raw_instance = raw_file
         save_path = os.path.join(preprocessed_dirpath, subject)
         if not os.path.exists(os.path.split(save_path)[0]):
@@ -268,16 +255,17 @@ def preprocess_dataset_seizures(
 def preprocess_dataset_all(
     subjects_with_seizures_path, dataset_path, preprocessed_dirpath
 ):
+    """Runs full preprocessing on the dataset cointained in the folder.
+    Args:
+        subject_with_seizures_path: path to a text file containing recordings with seizures.
+        dataset_path: path to a folder containing all patient folders.
+        preprocessed_dirpath: path to folder in which preprocessed files will be saved.
+    """
     subjects_with_seizures = [
-        subject[:-1]
-        for subject in open(subjects_with_seizures_path, "r").readlines()
+        subject[:-1] for subject in open(subjects_with_seizures_path, "r").readlines()
     ]
 
     for folder in os.listdir(dataset_path):
-        if not os.path.isdir(os.path.join(dataset_path, folder)):
-            print(os.path.isdir(os.path.join(dataset_path, folder)))
-            continue
-
         for file in os.listdir(os.path.join(dataset_path, folder)):
             if file.endswith(".edf"):
                 try:
@@ -303,9 +291,7 @@ def preprocess_dataset_all(
                         preprocessed_dirpath, folder, "seizures_" + file
                     )
                 else:
-                    save_path = os.path.join(
-                        preprocessed_dirpath, folder, file
-                    )
+                    save_path = os.path.join(preprocessed_dirpath, folder, file)
                 if not os.path.exists(os.path.split(save_path)[0]):
                     os.mkdir(os.path.split(save_path)[0])
                 mne.export.export_raw(save_path, raw_instance, fmt="edf")
@@ -349,9 +335,7 @@ def extract_training_data_and_labels_interictal(
         min_samples = samples_per_recording * fs * timestep
 
     else:
-        min_samples = (samples_per_recording - 1) * (
-            timestep - overlap
-        ) + timestep
+        min_samples = (samples_per_recording - 1) * (timestep - overlap) + timestep
 
         min_samples = min_samples * fs
     logging.info(f"Min needed samples {patient}: {min_samples}")
@@ -368,16 +352,14 @@ def extract_training_data_and_labels_interictal(
         :,
         random_start_time : random_start_time + min_samples,
     ]
-    final_array = prepare_timestep_array(
-        interictal_period, timestep * fs, overlap * fs
-    )
+    final_array = prepare_timestep_array(interictal_period, timestep * fs, overlap * fs)
 
     labels = np.full([final_array.shape[0]], label_value)
     logging.info(f"Final array shape {patient}: {final_array.shape}")
     return final_array, labels
 
 
-def extract_training_data_and_labels(
+def extract_training_data_and_labels_ictal_preictal(
     input_array,
     start_ev_array,
     stop_ev_array,
@@ -388,13 +370,12 @@ def extract_training_data_and_labels(
     ictal_overlap: int = 9,  # in seconds
     buffer_time: int = 5,  # in seconds
 ):
-    """Function to extract seizure periods and preictal perdiods into samples ready to be put into graph neural network."""
+    """Function to extract seizure periods and preictal perdiods into
+    samples ready to be put into graph neural network."""
     for n, start_ev in enumerate(start_ev_array):
         seizure_lookback = seizure_lookback
 
-        prev_event_time = (
-            start_ev - stop_ev_array[n - 1] if n > 0 else start_ev
-        )
+        prev_event_time = start_ev - stop_ev_array[n - 1] if n > 0 else start_ev
 
         if (
             prev_event_time > seizure_lookback + buffer_time
@@ -432,9 +413,7 @@ def extract_training_data_and_labels(
         preictal_event_time_labels = prepare_timestep_label(
             preictal_period, sample_timestep * fs, preictal_overlap * fs
         )  # assign time to seizure for every sample [s]
-        seizure_period = input_array[
-            :, (start_ev) * fs : (stop_ev_array[n]) * fs
-        ]
+        seizure_period = input_array[:, (start_ev) * fs : (stop_ev_array[n]) * fs]
 
         seizure_period = (
             np.expand_dims(seizure_period.transpose(), axis=2)
@@ -451,15 +430,9 @@ def extract_training_data_and_labels(
         seizure_event_labels = np.ones(seizure_features.shape[0])
 
         seizure_event_time_labels = np.full(seizure_features.shape[0], 0)
-        # if len(preictal_features.shape) != 4 or len(seizure_features.shape) != 4:
-        #     continue
 
         try:
-            if (
-                len(preictal_features.shape) == 4
-            ):  # and preictal_features.shape[0] == int(seizure_lookback/sample_timestep):
-                #  print(f"Adding correct preictal features to the dataset.", preictal_features.shape)
-
+            if len(preictal_features.shape) == 4:
                 full_preictal_features = np.concatenate(
                     (full_preictal_features, preictal_features)
                 )
@@ -484,11 +457,7 @@ def extract_training_data_and_labels(
                     (full_seizure_event_time_labels, seizure_event_time_labels)
                 )
         except NameError:
-            if (
-                len(preictal_features.shape) == 4
-            ):  # and preictal_features.shape[0] == int(seizure_lookback/sample_timestep):
-                # print(f"Adding correct preictal features to the dataset.", preictal_features.shape)
-
+            if len(preictal_features.shape) == 4:
                 full_preictal_features = preictal_features
                 full_preictal_event_labels = preictal_event_labels
                 full_preictal_event_time_labels = preictal_event_time_labels
@@ -509,17 +478,9 @@ def extract_training_data_and_labels(
             (full_preictal_event_time_labels, full_seizure_event_time_labels),
             axis=0,
         )
-    except UnboundLocalError:
-        # if 'full_seizure_features' in locals().keys():
-        #     recording_features_array = full_seizure_features
-        #     recording_labels_array = full_seizure_event_labels.astype(np.int32)
-        #     recording_timestep_array = full_seizure_event_time_labels
-        # elif 'full_preictal_features' in locals().keys():
-        #     recording_features_array = full_preictal_features
-        #     recording_labels_array = full_preictal_event_labels.astype(np.int32)
-        #     recording_timestep_array = full_preictal_event_time_labels
-        # else:
-        #     print("No valuable pairs of preictal and seizure periods found.")
+    except UnboundLocalError as e:
+        print(e)
+        print("No samples extracted")
 
         return (None, None, None)
 
@@ -530,20 +491,20 @@ def extract_training_data_and_labels(
     )
 
 
-# def run_prep(raw, line_freq, ransac=False, channel_wise=False):
-#     sfreq = raw.info["sfreq"]
-#     prep_params = {
-#         "ref_chs": "eeg",
-#         "reref_chs": "eeg",
-#         "line_freqs": np.arange(line_freq, sfreq / 2, line_freq),
-#     }
-#     raw.load_data()
-#     montage = raw.get_montage()
-#     prep = PrepPipeline(
-#         raw, prep_params, montage, ransac=ransac, channel_wise=channel_wise
-#     )
-#     prep.fit()
-#     return prep
+def run_prep(raw, line_freq, ransac=False, channel_wise=False):
+    sfreq = raw.info["sfreq"]
+    prep_params = {
+        "ref_chs": "eeg",
+        "reref_chs": "eeg",
+        "line_freqs": np.arange(line_freq, sfreq / 2, line_freq),
+    }
+    raw.load_data()
+    montage = raw.get_montage()
+    prep = PrepPipeline(
+        raw, prep_params, montage, ransac=ransac, channel_wise=channel_wise
+    )
+    prep.fit()
+    return prep
 
 
 def get_patient_annotations(path_to_file: Path, savedir: Path):
@@ -558,9 +519,7 @@ def get_patient_annotations(path_to_file: Path, savedir: Path):
         if "Number of Seizures in File" in line:
             num_of_seizures = int(line[-2:])
             if num_of_seizures > 0:
-                events_in_recording = raw_txt_lines[
-                    n + 1 : n + num_of_seizures * 2 + 1
-                ]
+                events_in_recording = raw_txt_lines[n + 1 : n + num_of_seizures * 2 + 1]
                 for event in events_in_recording:
                     if "Start Time" in event:
                         sub_ev = event.split(": ")[1]
@@ -569,9 +528,7 @@ def get_patient_annotations(path_to_file: Path, savedir: Path):
                         if current_file_name not in event_dict_start.keys():
                             event_dict_start[current_file_name] = [time_value]
                         else:
-                            event_dict_start[current_file_name].append(
-                                time_value
-                            )
+                            event_dict_start[current_file_name].append(time_value)
                     elif "End Time" in event:
                         sub_ev = event.split(": ")[1]
 
@@ -581,9 +538,7 @@ def get_patient_annotations(path_to_file: Path, savedir: Path):
                             event_dict_stop[current_file_name] = [time_value]
 
                         else:
-                            event_dict_stop[current_file_name].append(
-                                time_value
-                            )
+                            event_dict_stop[current_file_name].append(time_value)
     df = pd.DataFrame.from_dict(event_dict_start, orient="index")
     col_list = []
     for n in range(1, len(df.columns) + 1):
@@ -591,9 +546,7 @@ def get_patient_annotations(path_to_file: Path, savedir: Path):
     df_start = pd.DataFrame.from_dict(
         event_dict_start, orient="index", columns=col_list
     )
-    df_end = pd.DataFrame.from_dict(
-        event_dict_stop, orient="index", columns=col_list
-    )
+    df_end = pd.DataFrame.from_dict(event_dict_stop, orient="index", columns=col_list)
     patient_id = current_file_name.split("_")[0]
     if not os.path.exists(savedir):
         os.mkdir(savedir)
@@ -612,22 +565,20 @@ def get_annotation_files(dataset_path, dst_path):
             patient_files = os.listdir(patient_folder_path)
             for filename in patient_files:
                 if "summary" in filename:
-                    annotation_path = os.path.join(
-                        patient_folder_path, filename
-                    )
+                    annotation_path = os.path.join(patient_folder_path, filename)
                     get_patient_annotations(Path(annotation_path), dst_path)
 
 
 def save_timeseries_array(ds_path, target_path):
+    """Save timeseries array from EDF files to NPY files.
+    Redundant, but kept for compatibility."""
     patient_folders = os.listdir(ds_path)
     for folder in patient_folders:
         patient_folder_path = os.path.join(ds_path, folder)
         patient_files = os.listdir(patient_folder_path)
         for file in patient_files:
             filepath = os.path.join(patient_folder_path, file)
-            data_raw = mne.io.read_raw_edf(
-                filepath, preload=False, verbose=False
-            )
+            data_raw = mne.io.read_raw_edf(filepath, preload=False, verbose=False)
             array_data = data_raw.get_data()
             dst_folder = os.path.join(target_path, folder)
             if not os.path.exists(dst_folder):
@@ -668,19 +619,16 @@ def plv_connectivity_old(sensors, data):
     for i in range(sensors):
         for k in range(sensors):
             connectivity_matrix[i, k] = (
-                np.abs(np.sum(np.exp(1j * (phase[i, :] - phase[k, :]))))
-                / data_points
+                np.abs(np.sum(np.exp(1j * (phase[i, :] - phase[k, :])))) / data_points
             )
-
-    # Computing connectivity vector
-    # connectivity_vector = connectivity_matrix[np.triu_indices(connectivity_matrix.shape[0],k=1)]
-
-    # returning connectivity matrix and vector
 
     return connectivity_matrix
 
 
 def create_recordings_plv(npy_dataset_path, dst_path):
+    """Creates PLV matrices for every recording in the dataset.
+    Legacy, used only in some preliminary experiments."""
+
     patient_list = os.listdir(npy_dataset_path)
     if not os.path.exists(dst_path):
         os.mkdir(dst_path)
@@ -729,9 +677,7 @@ def compute_plv_matrix(graph: np.ndarray, sfreq=None) -> np.ndarray:
 
     # Fill the lower triangular part by mirroring the upper triangular
     plv_matrix = (
-        symmetric_matrix
-        + symmetric_matrix.T
-        - np.diag(np.diag(symmetric_matrix))
+        symmetric_matrix + symmetric_matrix.T - np.diag(np.diag(symmetric_matrix))
     )
 
     # Add 1 to the diagonal elements
@@ -751,9 +697,7 @@ def compute_spect_corr_matrix(
         spectral_correlation_matrix: (np.ndarray) Spectral correlation matrix of the input graph.
 
     """
-    spectral_corr_vector = compute_spect_corr(
-        sfreq, graph, with_eigenvalues=False
-    )
+    spectral_corr_vector = compute_spect_corr(sfreq, graph, with_eigenvalues=False)
     n = int(np.sqrt(2 * len(spectral_corr_vector))) + 1
 
     # Reshape the flattened array into a square matrix
@@ -768,9 +712,7 @@ def compute_spect_corr_matrix(
 
     # Fill the lower triangular part by mirroring the upper triangular
     spectral_correlation_matrix = (
-        symmetric_matrix
-        + symmetric_matrix.T
-        - np.diag(np.diag(symmetric_matrix))
+        symmetric_matrix + symmetric_matrix.T - np.diag(np.diag(symmetric_matrix))
     )
 
     # Add 1 to the diagonal elements

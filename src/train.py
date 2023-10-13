@@ -1,17 +1,19 @@
-import multiprocessing as mp
 import os
 import warnings
+import multiprocessing as mp
 from argparse import ArgumentParser
-
-import lightning.pytorch as pl
-import numpy as np
+from statistics import mean, stdev
 import torch
 import torch_geometric
+import wandb
+import numpy as np
+import lightning.pytorch as pl
+from torch_geometric.loader import DataLoader
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.utils.class_weight import compute_class_weight
-from torch_geometric.loader import DataLoader
-from statistics import mean, stdev
-import wandb
+from iterstrat.ml_stratifiers import MultilabelStratifiedKFold
+
+
 from models import GATv2Lightning
 from utils.dataloader_utils import (
     GraphDataset,
@@ -19,7 +21,6 @@ from utils.dataloader_utils import (
     HDFDatasetLoader,
     save_data_list,
 )
-from iterstrat.ml_stratifiers import MultilabelStratifiedKFold
 
 warnings.filterwarnings(
     "ignore", ".*does not have many workers.*"
@@ -55,16 +56,10 @@ parser.add_argument("--batch_size", type=int, default=256)
 parser.add_argument("--cache_dir", type=str, default="data/cache")
 parser.add_argument("--exp_name", type=str, default="eeg_exp")
 parser.add_argument("--npy_data_dir", type=str, default="data/npy_data")
-parser.add_argument(
-    "--event_tables_dir", type=str, default="data/event_tables"
-)
+parser.add_argument("--event_tables_dir", type=str, default="data/event_tables")
 parser.add_argument("--use_ictal_periods", action="store_true", default=False)
-parser.add_argument(
-    "--use_preictal_periods", action="store_true", default=False
-)
-parser.add_argument(
-    "--use_interictal_periods", action="store_true", default=False
-)
+parser.add_argument("--use_preictal_periods", action="store_true", default=False)
+parser.add_argument("--use_interictal_periods", action="store_true", default=False)
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--kfold_cval_mode", action="store_true", default=False)
 parser.add_argument("--n_splits", type=int, default=5)
@@ -136,6 +131,7 @@ INITIAL_CONFIG = dict(
 
 
 def loso_training():
+    """Initialize loso training."""
     wandb.init(
         config=INITIAL_CONFIG,
     )
@@ -262,12 +258,8 @@ def loso_training():
             class_weights=class_weight,
         )
         trainer.fit(model, train_dataloader, valid_dataloader)
-        eval_results = trainer.test(model, loso_dataloader, ckpt_path="best")[
-            0
-        ]
-        wandb.log(
-            {"patient": int("".join([n for n in loso_patient if n.isdigit()]))}
-        )
+        eval_results = trainer.test(model, loso_dataloader, ckpt_path="best")[0]
+        wandb.log({"patient": int("".join([n for n in loso_patient if n.isdigit()]))})
         wandb.define_metric("test_loss_epoch", step_metric="patient")
         wandb.define_metric("loso_sensitivity", step_metric="patient")
         wandb.define_metric("loso_specificity", step_metric="patient")
@@ -287,6 +279,7 @@ def loso_training():
 
 
 def kfold_cval():
+    """Initialize kfold cross validation."""
     writer = HDFDataset_Writer(
         seizure_lookback=SEIZURE_LOOKBACK,
         buffer_time=BUFFER_TIME,
@@ -320,9 +313,7 @@ def kfold_cval():
     full_data_path = loader.get_datasets()[0]
     full_dataset = GraphDataset(full_data_path)
     features_shape = full_dataset[0].x.shape[-1]
-    label_array = np.array([data.y.item() for data in full_dataset]).reshape(
-        -1, 1
-    )
+    label_array = np.array([data.y.item() for data in full_dataset]).reshape(-1, 1)
     patient_id_array = np.array(
         [data.patient_id.item() for data in full_dataset]
     ).reshape(-1, 1)
@@ -336,12 +327,8 @@ def kfold_cval():
     torch_device = torch.device(device)
     precision = "bf16-mixed" if device == "cpu" else "16-mixed"
     strategy = pl.strategies.SingleDeviceStrategy(device=torch_device)
-    kfold = MultilabelStratifiedKFold(
-        n_splits=N_SPLITS, random_state=42, shuffle=True
-    )
-    # kfold = StratifiedShuffleSplit(
-    #     n_splits=N_SPLITS, test_size=0.1, random_state=42
-    # )
+    kfold = MultilabelStratifiedKFold(n_splits=N_SPLITS, random_state=42, shuffle=True)
+
     for fold, (train_idx, test_idx) in enumerate(
         kfold.split(np.zeros(len(full_dataset)), class_labels_patient_labels)
     ):
@@ -354,9 +341,7 @@ def kfold_cval():
         )
         CONFIG = wandb.config
         train_labels = class_labels_patient_labels[train_idx]
-        splitter = StratifiedShuffleSplit(
-            n_splits=1, test_size=0.1, random_state=42
-        )
+        splitter = StratifiedShuffleSplit(n_splits=1, test_size=0.1, random_state=42)
         sub_train_idx, val_idx = next(splitter.split(train_idx, train_labels))
         train_dataset = [full_dataset[idx] for idx in sub_train_idx]
         valid_dataset = [full_dataset[idx] for idx in val_idx]
@@ -444,31 +429,13 @@ def kfold_cval():
             class_weights=class_weight,
         )
         trainer.fit(model, train_dataloader, valid_dataloader)
-        eval_results = trainer.test(model, test_dataloader, ckpt_path="best")[
-            0
-        ]
+        trainer.test(model, test_dataloader, ckpt_path="best")
         wandb.finish()
-    #     if fold == 0:
-    #         summary_dict = eval_results
-    #     else:
-    #         summary_dict = {
-    #             key: summary_dict[key] + eval_results[key]
-    #             for key in summary_dict.keys()
-    #         }
-    # summary_dict = {
-    #     key: summary_dict[key] / (fold + 1) for key in summary_dict.keys()
-    # }
-    # full_dataset.clear_cache()
-    # wandb.log({"kfold_final_loss": summary_dict["test_loss_epoch"]})
-    # wandb.finish()
+
     return None
 
 
 if __name__ == "__main__":
-    # torch.multiprocessing.set_start_method("forkserver", force=True)
-    # mp.set_start_method("forkserver", force=True)
-    #  torch.multiprocessing.set_sharing_strategy("file_system")
-    print(mp.get_start_method())
     if KFOLD_CVAL_MODE:
         kfold_cval()
     else:

@@ -1,3 +1,4 @@
+"""Helper utilities for meanuring memory consumption during training."""
 from __future__ import annotations
 from collections import defaultdict
 import pickle
@@ -9,6 +10,7 @@ from tabulate import tabulate
 import os
 import time
 import psutil
+from serialize import NumpySerializedList
 
 
 def get_mem_info(pid: int) -> dict[str, int]:
@@ -96,7 +98,6 @@ class DatasetFromList(torch.utils.data.Dataset):
 
 
 if __name__ == "__main__":
-  from serialize import NumpySerializedList
   monitor = MemoryMonitor()
   print("Initial", monitor.str())
   lst = create_coco()

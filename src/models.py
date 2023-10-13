@@ -14,7 +14,9 @@ from torchmetrics import Specificity, Recall, AUROC, F1Score
 
 
 class ClassicGCN(torch.nn.Module):
-    """GCN as in the Efficient Graph Convolutional Networks paper."""
+    """GCN as in the Efficient Graph Convolutional Networks paper.
+    Used in preliminary experiments.
+    """
 
     def __init__(self, in_features, n_nodes=18):
         super(ClassicGCN, self).__init__()
@@ -63,6 +65,7 @@ class ClassicGCN(torch.nn.Module):
 
 
 class GATv2(torch.nn.Module):
+    """GATv2 as in the paper. Main model explored in the project."""
     def __init__(
         self,
         in_features: int,
@@ -123,6 +126,7 @@ class GATv2(torch.nn.Module):
 
 
 class GATv2Lightning(pl.LightningModule):
+    """Lightning wrapper for GATv2. """
     def __init__(
         self,
         in_features: int,
@@ -413,7 +417,7 @@ class GATv2Lightning(pl.LightningModule):
 
 
 class GINCustom(torch.nn.Module):
-    """GIN"""
+    """GIN model. Used in preliminary experiments."""
 
     def __init__(self, in_features, dim_h=128, dropout=0.5, n_classes=2):
         super(GINCustom, self).__init__()
@@ -498,6 +502,7 @@ class GINCustom(torch.nn.Module):
 
 
 class GINLightning(pl.LightningModule):
+    """Lightning wrapper for GIN."""
     def __init__(
         self,
         in_features: int,
