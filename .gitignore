@@ -16,4 +16,4 @@ wandb_api_key.txt
 *cache*
 wandb/
 
-checkpoints*/
+*checkpoints*/

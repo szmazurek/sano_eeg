@@ -10,7 +10,7 @@ from sklearn.decomposition import PCA
 from mne_features.bivariate import compute_phase_lock_val, compute_spect_corr
 from typing import Union
 import logging
-
+import torch
 
 # from mne_icalabel import label_components
 # from pyprep.prep_pipeline import PrepPipeline
@@ -101,18 +101,18 @@ def remove_channels_duplicate(ch_name):
 def remove_repeating_pairs(cleared_ch_names):
     repeating_chs = []
     for pair in cleared_ch_names:
-        temp_ch_pairs = cleared_ch_names.copy()
-        temp_ch_pairs.remove(pair)
-        try:
-            ch_1, ch_2 = pair.split(sep="-")
-        except ValueError:
-            ch_1, ch_2, ch_3 = pair.split(sep="-")
-        for pair_2 in temp_ch_pairs:
-            num_of_same_chs = pair_2.count(ch_1) + pair_2.count(ch_2)
-            if num_of_same_chs > 1:
+        ch_1, ch_2, *_ = pair.split(sep="-")
+        for pair_2 in cleared_ch_names:
+            if pair_2 == pair:
+                continue
+            if ch_1 in pair_2 and ch_2 in pair_2:
                 repeating_chs.append(pair_2)
+                break
 
-    return repeating_chs[0]  # not so good function!
+    if repeating_chs:
+        return repeating_chs[0]
+    else:
+        return None
 
 
 def reorder_channels_chbmit(raw):
@@ -145,7 +145,8 @@ def run_preprocessing(
     """Runs preprocessing on given mne.raw instance."""
     if apply_ica and apply_pca:
         raise ValueError(
-            "Values of apply_pca and apply_ica cannot both be True! Choose only one method of artifact removal."
+            "Values of apply_pca and apply_ica cannot both be True! "
+            "Choose only one method of artifact removal."
         )
 
     raw.load_data()
@@ -255,8 +256,10 @@ def preprocess_dataset_seizures(
             continue
 
         reorder_channels_chbmit(raw_file)
-        # THIS SHOULD BE PARAMETRIZED AS KWARGS
-        # raw_instance = run_preprocessing(raw_file, apply_pca=False,avg_ref=True, freq_l=0.5, freq_h=30.0)
+
+        raw_instance = run_preprocessing(
+            raw_file, apply_pca=False, avg_ref=True, freq_l=0.5, freq_h=30.0
+        )
         raw_instance = raw_file
         save_path = os.path.join(preprocessed_dirpath, subject)
         if not os.path.exists(os.path.split(save_path)[0]):
@@ -360,8 +363,7 @@ def extract_training_data_and_labels_interictal(
     logging.info(
         f"Samples per recording to be extracted {patient}: {samples_per_recording}"
     )
-    # if max_samples < samples_per_recording * fs * timestep:
-    #     raise ValueError("Not enough samples in the recording.")
+
     random_start_time = np.random.randint(0, total_samples - min_samples)
     interictal_period = input_array[
         :,
@@ -371,10 +373,10 @@ def extract_training_data_and_labels_interictal(
     final_array = prepare_timestep_array(
         interictal_period, timestep * fs, overlap * fs
     )
-
+    interictal_time_labels = np.full(final_array.shape[0], -1)
     labels = np.full([final_array.shape[0]], label_value)
     logging.info(f"Final array shape {patient}: {final_array.shape}")
-    return final_array, labels
+    return final_array, labels, interictal_time_labels
 
 
 def extract_training_data_and_labels(
@@ -390,8 +392,6 @@ def extract_training_data_and_labels(
 ):
     """Function to extract seizure periods and preictal perdiods into samples ready to be put into graph neural network."""
     for n, start_ev in enumerate(start_ev_array):
-        seizure_lookback = seizure_lookback
-
         prev_event_time = (
             start_ev - stop_ev_array[n - 1] if n > 0 else start_ev
         )
@@ -510,17 +510,6 @@ def extract_training_data_and_labels(
             axis=0,
         )
     except UnboundLocalError:
-        # if 'full_seizure_features' in locals().keys():
-        #     recording_features_array = full_seizure_features
-        #     recording_labels_array = full_seizure_event_labels.astype(np.int32)
-        #     recording_timestep_array = full_seizure_event_time_labels
-        # elif 'full_preictal_features' in locals().keys():
-        #     recording_features_array = full_preictal_features
-        #     recording_labels_array = full_preictal_event_labels.astype(np.int32)
-        #     recording_timestep_array = full_preictal_event_time_labels
-        # else:
-        #     print("No valuable pairs of preictal and seizure periods found.")
-
         return (None, None, None)
 
     return (
@@ -530,20 +519,20 @@ def extract_training_data_and_labels(
     )
 
 
-# def run_prep(raw, line_freq, ransac=False, channel_wise=False):
-#     sfreq = raw.info["sfreq"]
-#     prep_params = {
-#         "ref_chs": "eeg",
-#         "reref_chs": "eeg",
-#         "line_freqs": np.arange(line_freq, sfreq / 2, line_freq),
-#     }
-#     raw.load_data()
-#     montage = raw.get_montage()
-#     prep = PrepPipeline(
-#         raw, prep_params, montage, ransac=ransac, channel_wise=channel_wise
-#     )
-#     prep.fit()
-#     return prep
+def run_prep(raw, line_freq, ransac=False, channel_wise=False):
+    sfreq = raw.info["sfreq"]
+    prep_params = {
+        "ref_chs": "eeg",
+        "reref_chs": "eeg",
+        "line_freqs": np.arange(line_freq, sfreq / 2, line_freq),
+    }
+    raw.load_data()
+    montage = raw.get_montage()
+    prep = PrepPipeline(
+        raw, prep_params, montage, ransac=ransac, channel_wise=channel_wise
+    )
+    prep.fit()
+    return prep
 
 
 def get_patient_annotations(path_to_file: Path, savedir: Path):
@@ -672,25 +661,35 @@ def plv_connectivity_old(sensors, data):
                 / data_points
             )
 
-    # Computing connectivity vector
-    # connectivity_vector = connectivity_matrix[np.triu_indices(connectivity_matrix.shape[0],k=1)]
-
-    # returning connectivity matrix and vector
-
     return connectivity_matrix
 
 
-def create_recordings_plv(npy_dataset_path, dst_path):
+def create_recordings_plv_old(npy_dataset_path: str, dst_path: str) -> None:
+    """Calculates phase locking value (PLV) for each recording in a dataset and saves the results to disk.
+
+    Args:
+        npy_dataset_path (str): Path to the directory containing the dataset in .npy format.
+        dst_path (str): Path to the directory where the PLV results will be saved.
+    """
+    # Get list of patients in dataset directory
     patient_list = os.listdir(npy_dataset_path)
+
+    # Create destination directory if it doesn't exist
     if not os.path.exists(dst_path):
         os.mkdir(dst_path)
-    for patient in patient_list:  # iterate over patient names
+
+    # Iterate over patients in dataset directory
+    for patient in patient_list:
         patient_path = os.path.join(npy_dataset_path, patient)
         recording_list = os.listdir(patient_path)
         save_folder = os.path.join(dst_path, patient)
+
+        # Create patient directory in destination if it doesn't exist
         if not os.path.exists(save_folder):
             os.mkdir(save_folder)
-        for record in recording_list:  # iterate over recordings for a patient
+
+        # Iterate over recordings for a patient
+        for record in recording_list:
             recording_path = os.path.join(patient_path, record)
             data_array = np.load(recording_path)  # load the recording
             starttime = timeit.default_timer()

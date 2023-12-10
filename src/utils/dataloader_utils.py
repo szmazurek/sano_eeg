@@ -398,10 +398,18 @@ class HDFDataset_Writer:
             if self.smote:
                 features, labels = self._apply_smote(features, labels)
             labels = labels.reshape((labels.shape[0], 1)).astype(np.float32)
+            time_labels = time_labels.reshape((time_labels.shape[0], 1))
+            if time_labels.shape[0] != features.shape[0]:
+                self.logger.info(
+                    f"Time labels extracted {time_labels.shape}, corresponding features {features.shape}"
+                )
             try:
                 features_patient = np.concatenate([features_patient, features])
                 labels_patient = np.concatenate([labels_patient, labels])
                 edge_idx_patient = np.concatenate([edge_idx_patient, edge_idx])
+                time_labels_patient = np.concatenate(
+                    [time_labels_patient, time_labels]
+                )
                 # edge_weights_patient = np.concatenate(
                 # [edge_weights_patient, edge_weights]
                 # )
@@ -409,6 +417,7 @@ class HDFDataset_Writer:
                 features_patient = features
                 labels_patient = labels
                 edge_idx_patient = edge_idx
+                time_labels_patient = time_labels
                 # edge_weights_patient = edge_weights
 
         try:
@@ -432,7 +441,11 @@ class HDFDataset_Writer:
                             data=edge_idx_patient,
                             maxshape=(None, n_channels, n_channels),
                         )
-
+                        hdf5_file[patient].create_dataset(
+                            "time_labels",
+                            data=time_labels_patient,
+                            maxshape=(None, 1),
+                        )
                         self.logger.info(
                             f"Dataset for patient {patient} created successfully!."
                         )
@@ -450,6 +463,7 @@ class HDFDataset_Writer:
             self.logger.error("##############################################")
             self.logger.error(f"Cannot create dataset for patient {patient}!")
             self.logger.error("##############################################")
+
         preictal_samples = np.unique(labels_patient, return_counts=True)[1][0]
         return (patient, preictal_samples, sample_count)
 
@@ -499,6 +513,7 @@ class HDFDataset_Writer:
                 (
                     features,
                     labels,
+                    time_labels,
                 ) = utils.extract_training_data_and_labels_interictal(
                     input_array=data_array,
                     patient=patient,
@@ -507,6 +522,7 @@ class HDFDataset_Writer:
                     timestep=self.sample_timestep,
                     overlap=self.inter_overlap,
                 )
+
             except ValueError:
                 self.logger.error(
                     f"Cannot extract demanded amount of interictal samples from recording {record} for patient {patient}"
@@ -528,6 +544,7 @@ class HDFDataset_Writer:
             if len(idx_to_delete) > 0:
                 features = np.delete(features, obj=idx_to_delete, axis=0)
                 labels = np.delete(labels, obj=idx_to_delete, axis=0)
+                time_labels = np.delete(time_labels, obj=idx_to_delete, axis=0)
             if features.shape[0] == 0:
                 self.logger.info(
                     f"No samples left after removing bad ones for patient {patient} - recording {record}"
@@ -561,16 +578,24 @@ class HDFDataset_Writer:
                 continue
 
             labels = labels.reshape((labels.shape[0], 1)).astype(np.float32)
-            # here lies the error
+            time_labels = time_labels.reshape((time_labels.shape[0], 1))
+            if time_labels.shape[0] != features.shape[0]:
+                self.logger.info(
+                    f"Time labels extracted {time_labels.shape}, corresponding features {features.shape}"
+                )
             try:
                 features_patient = np.concatenate([features_patient, features])
                 labels_patient = np.concatenate([labels_patient, labels])
                 edge_idx_patient = np.concatenate([edge_idx_patient, edge_idx])
+                time_labels_patient = np.concatenate(
+                    [time_labels_patient, time_labels]
+                )
                 # edge_weights_patient = np.concatenate([edge_weights_patient, edge_weights])
             except NameError:
                 features_patient = features
                 labels_patient = labels
                 edge_idx_patient = edge_idx
+                time_labels_patient = time_labels
                 # edge_weights_patient = edge_weights
 
         while True:
@@ -584,6 +609,9 @@ class HDFDataset_Writer:
                     ].shape[0]
                     current_patient_edge_idx = hdf5_file[patient][
                         "edge_idx"
+                    ].shape[0]
+                    current_patient_time_labels = hdf5_file[patient][
+                        "time_labels"
                     ].shape[0]
                     hdf5_file[patient]["features"].resize(
                         (current_patient_features + features_patient.shape[0]),
@@ -599,6 +627,18 @@ class HDFDataset_Writer:
                     hdf5_file[patient]["labels"][
                         -labels_patient.shape[0] :
                     ] = labels_patient
+
+                    hdf5_file[patient]["time_labels"].resize(
+                        (
+                            current_patient_time_labels
+                            + time_labels_patient.shape[0]
+                        ),
+                        axis=0,
+                    )
+                    hdf5_file[patient]["time_labels"][
+                        -time_labels_patient.shape[0] :
+                    ] = time_labels_patient
+
                     hdf5_file[patient]["edge_idx"].resize(
                         (current_patient_edge_idx + edge_idx_patient.shape[0]),
                         axis=0,
@@ -711,7 +751,6 @@ class HDFDataset_Writer:
 @dataclass
 class HDFDatasetLoader:
     DEFAULT_CLASS_LABELS = {"preictal": 0, "ictal": 1, "interictal": 2}
-    # FREQ_BANDS = [0.5, 4, 8, 13, 29]
     FREQ_BANDS = [(0.5, 4), (4, 8), (8, 13), (13, 29)]
     BAND_COUNT = len(FREQ_BANDS) - 1
     """
@@ -782,10 +821,7 @@ class HDFDatasetLoader:
         self.logger.info("Created processed cache subfolders.")
         return path_list
 
-    # def _create_paths(self) -> None:
-
     def __post_init__(self) -> None:
-        #  super().__init__()
         self._check_arguments()
         self._logger_init()
         self._determine_dataset_characteristics()
@@ -1200,11 +1236,23 @@ class HDFDatasetLoader:
         labels_transformed = torch.from_numpy(labels).float()
         return labels_transformed
 
+    @staticmethod
+    def _transform_time_labels(time_labels: np.ndarray) -> torch.tensor:
+        """Convert time labels to torch tensor.
+        Args:
+            time_labels: (np.ndarray) Array with time labels.
+        Returns:
+            time_labels_transformed: (torch.tensor) Tensor with time labels.
+        """
+        time_labels_transformed = torch.from_numpy(time_labels).float()
+        return time_labels_transformed
+
     def _features_to_data_list(
         self,
         features: np.ndarray,
         edge_idx: np.ndarray,
         labels: np.ndarray,
+        time_labels: np.ndarray,
         patient_id: Union[int, None] = None,
     ) -> List[Data]:
         """Converts features, edges and labels to list of torch_geometric.data.Data objects.
@@ -1218,8 +1266,12 @@ class HDFDatasetLoader:
         Returns:
             data_list: (list) List of torch_geometric.data.Data objects.
         """
+        self.logger.info(f"time labels shape {time_labels.shape}")
+        self.logger.info(f"features shape {features.shape}")
         processed_features = self._transform_features(features)
         processed_labels = self._transform_labels(labels)
+        processed_time_labels = self._transform_time_labels(time_labels)
+
         if self.kfold_cval_mode:
             data_list = [
                 Data(
@@ -1227,6 +1279,7 @@ class HDFDatasetLoader:
                     edge_index=self._transform_edges(edge_idx[i]),
                     y=processed_labels[i],
                     patient_id=patient_id,
+                    time_labels=processed_time_labels[i],
                 )
                 for i in range(len(processed_features))
             ]
@@ -1236,6 +1289,7 @@ class HDFDatasetLoader:
                 x=processed_features[i],
                 edge_index=self._transform_edges(edge_idx[i]),
                 y=processed_labels[i],
+                time_labels=processed_time_labels[i],
             )
             for i in range(len(processed_features))
         ]
@@ -1359,13 +1413,20 @@ class HDFDatasetLoader:
             features = hdf5_file[patient]["features"][:]
             labels = hdf5_file[patient]["labels"][:]
             edge_idx = hdf5_file[patient]["edge_idx"][:]
+            time_labels = hdf5_file[patient]["time_labels"][:]
             if sum(self.used_classes_dict.values()) < 3:
                 features, labels, edge_idx = self.update_classes(
                     features, labels, edge_idx
                 )
+
             data_list = self._features_to_data_list(
-                features, edge_idx, labels, patient_id
+                features=features,
+                edge_idx=edge_idx,
+                labels=labels,
+                time_labels=time_labels,
+                patient_id=patient_id,
             )
+        self.logger.info(f"First data item {data_list[0]}")
         del features, labels, edge_idx
         gc.collect()
         data, slices = collate_datalist(data_list)
@@ -1398,8 +1459,10 @@ class HDFDatasetLoader:
             data_lists: (list) List of lists of torch_geometric.data.Data objects loaded.
         """
         start = time.time()
+
         num_processes = CPUS_PER_TASK
         pool = CTX.Pool(processes=num_processes)
+
         try:
             if self.train_val_split_ratio > 0:
                 pool.map_async(
