@@ -394,7 +394,7 @@ def kfold_cval():
             save_top_k=1,
             mode="min",
             verbose=False,
-            dirpath=f"checkpoints_final_new_strat/fold_{fold}",
+            dirpath=f"test_checkpoints/{EXP_NAME}/fold_{fold}",
             filename="{epoch}-{val_loss:.3f}",
         )
         callbacks = [early_stopping, best_checkpoint_callback]

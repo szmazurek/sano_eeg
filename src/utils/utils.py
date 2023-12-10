@@ -11,8 +11,12 @@ from pathlib import Path
 from typing import Union
 from sklearn.decomposition import PCA
 from mne_features.bivariate import compute_phase_lock_val, compute_spect_corr
-from mne_icalabel import label_components
-from pyprep.prep_pipeline import PrepPipeline
+from typing import Union
+import logging
+import torch
+
+# from mne_icalabel import label_components
+# from pyprep.prep_pipeline import PrepPipeline
 from mne.preprocessing import ICA
 
 
@@ -115,7 +119,9 @@ def reorder_channels_chbmit(raw):
         ch_map[old_name] = current_order[n]
     raw.rename_channels(ch_map)
     raw.reorder_channels(ch_demanded_order)
-    montage = mne.channels.read_custom_montage(Path("data/chb_mit_ch_locs.loc"))
+    montage = mne.channels.read_custom_montage(
+        Path("data/chb_mit_ch_locs.loc")
+    )
     raw.set_montage(montage)
     return None
 
@@ -136,7 +142,8 @@ def run_preprocessing(
     """Runs preprocessing on given mne.raw instance."""
     if apply_ica and apply_pca:
         raise ValueError(
-            "Values of apply_pca and apply_ica cannot both be True! Choose only one method of artifact removal."
+            "Values of apply_pca and apply_ica cannot both be True! "
+            "Choose only one method of artifact removal."
         )
 
     raw.load_data()
@@ -159,7 +166,9 @@ def run_preprocessing(
         ica.fit(raw)
         ic_labels = label_components(raw, ica, method="iclabel")
         labels = np.array(ic_labels["labels"])
-        ica.exclude = np.where((labels != "other") & (labels != "brain"))[0].tolist()
+        ica.exclude = np.where((labels != "other") & (labels != "brain"))[
+            0
+        ].tolist()
         ica.apply(raw)
 
     elif apply_pca:
@@ -209,7 +218,9 @@ def load_and_dump_channels(filepath):
         channel_ordering = current_channels[:-n_chs_to_drop]
         data_raw.reorder_channels(channel_ordering)
     if len(current_channels) < 18:
-        print(f"Too few channels to processd, found {len(current_channels)}. Skipping.")
+        print(
+            f"Too few channels to processd, found {len(current_channels)}. Skipping."
+        )
         return None
     return data_raw
 
@@ -228,7 +239,8 @@ def preprocess_dataset_seizures(
 
     """
     subjects_with_seizures = [
-        subject[:-1] for subject in open(subjects_with_seizures_path, "r").readlines()
+        subject[:-1]
+        for subject in open(subjects_with_seizures_path, "r").readlines()
     ]
     for subject in subjects_with_seizures:
         try:
@@ -262,7 +274,8 @@ def preprocess_dataset_all(
         preprocessed_dirpath: path to folder in which preprocessed files will be saved.
     """
     subjects_with_seizures = [
-        subject[:-1] for subject in open(subjects_with_seizures_path, "r").readlines()
+        subject[:-1]
+        for subject in open(subjects_with_seizures_path, "r").readlines()
     ]
 
     for folder in os.listdir(dataset_path):
@@ -291,7 +304,9 @@ def preprocess_dataset_all(
                         preprocessed_dirpath, folder, "seizures_" + file
                     )
                 else:
-                    save_path = os.path.join(preprocessed_dirpath, folder, file)
+                    save_path = os.path.join(
+                        preprocessed_dirpath, folder, file
+                    )
                 if not os.path.exists(os.path.split(save_path)[0]):
                     os.mkdir(os.path.split(save_path)[0])
                 mne.export.export_raw(save_path, raw_instance, fmt="edf")
@@ -335,7 +350,9 @@ def extract_training_data_and_labels_interictal(
         min_samples = samples_per_recording * fs * timestep
 
     else:
-        min_samples = (samples_per_recording - 1) * (timestep - overlap) + timestep
+        min_samples = (samples_per_recording - 1) * (
+            timestep - overlap
+        ) + timestep
 
         min_samples = min_samples * fs
     logging.info(f"Min needed samples {patient}: {min_samples}")
@@ -344,19 +361,20 @@ def extract_training_data_and_labels_interictal(
     logging.info(
         f"Samples per recording to be extracted {patient}: {samples_per_recording}"
     )
-    # if max_samples < samples_per_recording * fs * timestep:
-    #     raise ValueError("Not enough samples in the recording.")
+
     random_start_time = np.random.randint(0, total_samples - min_samples)
     interictal_period = input_array[
         :,
         :,
         random_start_time : random_start_time + min_samples,
     ]
-    final_array = prepare_timestep_array(interictal_period, timestep * fs, overlap * fs)
-
+    final_array = prepare_timestep_array(
+        interictal_period, timestep * fs, overlap * fs
+    )
+    interictal_time_labels = np.full(final_array.shape[0], -1)
     labels = np.full([final_array.shape[0]], label_value)
     logging.info(f"Final array shape {patient}: {final_array.shape}")
-    return final_array, labels
+    return final_array, labels, interictal_time_labels
 
 
 def extract_training_data_and_labels_ictal_preictal(
@@ -373,9 +391,9 @@ def extract_training_data_and_labels_ictal_preictal(
     """Function to extract seizure periods and preictal perdiods into
     samples ready to be put into graph neural network."""
     for n, start_ev in enumerate(start_ev_array):
-        seizure_lookback = seizure_lookback
-
-        prev_event_time = start_ev - stop_ev_array[n - 1] if n > 0 else start_ev
+        prev_event_time = (
+            start_ev - stop_ev_array[n - 1] if n > 0 else start_ev
+        )
 
         if (
             prev_event_time > seizure_lookback + buffer_time
@@ -413,7 +431,9 @@ def extract_training_data_and_labels_ictal_preictal(
         preictal_event_time_labels = prepare_timestep_label(
             preictal_period, sample_timestep * fs, preictal_overlap * fs
         )  # assign time to seizure for every sample [s]
-        seizure_period = input_array[:, (start_ev) * fs : (stop_ev_array[n]) * fs]
+        seizure_period = input_array[
+            :, (start_ev) * fs : (stop_ev_array[n]) * fs
+        ]
 
         seizure_period = (
             np.expand_dims(seizure_period.transpose(), axis=2)
@@ -519,7 +539,9 @@ def get_patient_annotations(path_to_file: Path, savedir: Path):
         if "Number of Seizures in File" in line:
             num_of_seizures = int(line[-2:])
             if num_of_seizures > 0:
-                events_in_recording = raw_txt_lines[n + 1 : n + num_of_seizures * 2 + 1]
+                events_in_recording = raw_txt_lines[
+                    n + 1 : n + num_of_seizures * 2 + 1
+                ]
                 for event in events_in_recording:
                     if "Start Time" in event:
                         sub_ev = event.split(": ")[1]
@@ -528,7 +550,9 @@ def get_patient_annotations(path_to_file: Path, savedir: Path):
                         if current_file_name not in event_dict_start.keys():
                             event_dict_start[current_file_name] = [time_value]
                         else:
-                            event_dict_start[current_file_name].append(time_value)
+                            event_dict_start[current_file_name].append(
+                                time_value
+                            )
                     elif "End Time" in event:
                         sub_ev = event.split(": ")[1]
 
@@ -538,7 +562,9 @@ def get_patient_annotations(path_to_file: Path, savedir: Path):
                             event_dict_stop[current_file_name] = [time_value]
 
                         else:
-                            event_dict_stop[current_file_name].append(time_value)
+                            event_dict_stop[current_file_name].append(
+                                time_value
+                            )
     df = pd.DataFrame.from_dict(event_dict_start, orient="index")
     col_list = []
     for n in range(1, len(df.columns) + 1):
@@ -546,7 +572,9 @@ def get_patient_annotations(path_to_file: Path, savedir: Path):
     df_start = pd.DataFrame.from_dict(
         event_dict_start, orient="index", columns=col_list
     )
-    df_end = pd.DataFrame.from_dict(event_dict_stop, orient="index", columns=col_list)
+    df_end = pd.DataFrame.from_dict(
+        event_dict_stop, orient="index", columns=col_list
+    )
     patient_id = current_file_name.split("_")[0]
     if not os.path.exists(savedir):
         os.mkdir(savedir)
@@ -565,7 +593,9 @@ def get_annotation_files(dataset_path, dst_path):
             patient_files = os.listdir(patient_folder_path)
             for filename in patient_files:
                 if "summary" in filename:
-                    annotation_path = os.path.join(patient_folder_path, filename)
+                    annotation_path = os.path.join(
+                        patient_folder_path, filename
+                    )
                     get_patient_annotations(Path(annotation_path), dst_path)
 
 
@@ -578,7 +608,9 @@ def save_timeseries_array(ds_path, target_path):
         patient_files = os.listdir(patient_folder_path)
         for file in patient_files:
             filepath = os.path.join(patient_folder_path, file)
-            data_raw = mne.io.read_raw_edf(filepath, preload=False, verbose=False)
+            data_raw = mne.io.read_raw_edf(
+                filepath, preload=False, verbose=False
+            )
             array_data = data_raw.get_data()
             dst_folder = os.path.join(target_path, folder)
             if not os.path.exists(dst_folder):
@@ -619,7 +651,8 @@ def plv_connectivity_old(sensors, data):
     for i in range(sensors):
         for k in range(sensors):
             connectivity_matrix[i, k] = (
-                np.abs(np.sum(np.exp(1j * (phase[i, :] - phase[k, :])))) / data_points
+                np.abs(np.sum(np.exp(1j * (phase[i, :] - phase[k, :]))))
+                / data_points
             )
 
     return connectivity_matrix
@@ -630,15 +663,23 @@ def create_recordings_plv(npy_dataset_path, dst_path):
     Legacy, used only in some preliminary experiments."""
 
     patient_list = os.listdir(npy_dataset_path)
+
+    # Create destination directory if it doesn't exist
     if not os.path.exists(dst_path):
         os.mkdir(dst_path)
-    for patient in patient_list:  # iterate over patient names
+
+    # Iterate over patients in dataset directory
+    for patient in patient_list:
         patient_path = os.path.join(npy_dataset_path, patient)
         recording_list = os.listdir(patient_path)
         save_folder = os.path.join(dst_path, patient)
+
+        # Create patient directory in destination if it doesn't exist
         if not os.path.exists(save_folder):
             os.mkdir(save_folder)
-        for record in recording_list:  # iterate over recordings for a patient
+
+        # Iterate over recordings for a patient
+        for record in recording_list:
             recording_path = os.path.join(patient_path, record)
             data_array = np.load(recording_path)  # load the recording
             starttime = timeit.default_timer()
@@ -677,7 +718,9 @@ def compute_plv_matrix(graph: np.ndarray, sfreq=None) -> np.ndarray:
 
     # Fill the lower triangular part by mirroring the upper triangular
     plv_matrix = (
-        symmetric_matrix + symmetric_matrix.T - np.diag(np.diag(symmetric_matrix))
+        symmetric_matrix
+        + symmetric_matrix.T
+        - np.diag(np.diag(symmetric_matrix))
     )
 
     # Add 1 to the diagonal elements
@@ -697,7 +740,9 @@ def compute_spect_corr_matrix(
         spectral_correlation_matrix: (np.ndarray) Spectral correlation matrix of the input graph.
 
     """
-    spectral_corr_vector = compute_spect_corr(sfreq, graph, with_eigenvalues=False)
+    spectral_corr_vector = compute_spect_corr(
+        sfreq, graph, with_eigenvalues=False
+    )
     n = int(np.sqrt(2 * len(spectral_corr_vector))) + 1
 
     # Reshape the flattened array into a square matrix
@@ -712,7 +757,9 @@ def compute_spect_corr_matrix(
 
     # Fill the lower triangular part by mirroring the upper triangular
     spectral_correlation_matrix = (
-        symmetric_matrix + symmetric_matrix.T - np.diag(np.diag(symmetric_matrix))
+        symmetric_matrix
+        + symmetric_matrix.T
+        - np.diag(np.diag(symmetric_matrix))
     )
 
     # Add 1 to the diagonal elements
