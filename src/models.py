@@ -17,11 +17,10 @@ class ClassicGCN(torch.nn.Module):
     """GCN as in the Efficient Graph Convolutional Networks paper.
     Used for some preliminary experiments.
 
-    
+
     """
 
     def __init__(self, in_features, n_nodes=18):
-
         super(ClassicGCN, self).__init__()
         self.n_nodes = n_nodes
         self.recurrent_1 = GCNConv(
@@ -68,6 +67,8 @@ class ClassicGCN(torch.nn.Module):
 
 
 class GATv2(torch.nn.Module):
+    """GATv2 as in the paper. Main model explored in the project."""
+
     def __init__(
         self,
         in_features: int,
@@ -128,9 +129,8 @@ class GATv2(torch.nn.Module):
 
 
 class GATv2Lightning(pl.LightningModule):
-    """Lightning Module implementing GATv2 netwokr used for experiments.
-    
-    """
+    """Lightning Module implementing GATv2 network used for experiments."""
+
     def __init__(
         self,
         in_features: int,
@@ -506,7 +506,8 @@ class GINCustom(torch.nn.Module):
 
 
 class GINLightning(pl.LightningModule):
-    """Lightning module for GIN model """
+    """Lightning module for GIN model"""
+
     def __init__(
         self,
         in_features: int,

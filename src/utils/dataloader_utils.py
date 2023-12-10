@@ -1,3 +1,9 @@
+"""Utility functions for loading data from HDF5 file.
+Note that it was ran on HPC environment with significant amount of RAM.
+If you want to run it on your machine, you might need to adjust the
+creation of hdf files and data loader, as with this solution all samples
+are pre-loaded into memory at once (requires around 100GB of RAM).
+"""
 import multiprocessing as mp
 from torch_geometric.data.separate import separate
 from torch_geometric.data import Data
@@ -37,13 +43,18 @@ import gc
 import utils.utils as utils
 from collections import defaultdict
 
-# from torch_geometric.data import InMemoryDataset
+try:
+    CPUS_PER_TASK = (
+        int(os.environ["SLURM_CPUS_PER_TASK"])
+        if "SLURM_CPUS_PER_TASK" in os.environ
+        else mp.cpu_count()
+    )
+except Exception:
+    print("SLURM_CPUS_PER_TASK not found in environment")
+    print("Using all available CPUs.")
+    print("The script was by default created for SLURM environment.")
+    CPUS_PER_TASK = mp.cpu_count()
 
-CPUS_PER_TASK = (
-    int(os.environ["SLURM_CPUS_PER_TASK"])
-    if "SLURM_CPUS_PER_TASK" in os.environ
-    else mp.cpu_count()
-)
 CTX = mp.get_context("fork")
 
 
@@ -355,7 +366,7 @@ class HDFDataset_Writer:
                 features,
                 labels,
                 time_labels,
-            ) = utils.extract_training_data_and_labels(
+            ) = utils.extract_training_data_and_labels_ictal_preictal(
                 data_array,
                 start_event_tables,
                 stop_event_tables,
@@ -893,7 +904,6 @@ class HDFDatasetLoader:
             ].shape[1:]
         if self.loso_subject is not None:
             self.patient_list.remove(self.loso_subject)
-        #  self._determine_sample_count()
         self._determine_label_count()
         self._get_mean_std()
         return None
@@ -1337,8 +1347,7 @@ class HDFDatasetLoader:
             features_val = hdf5_file[patient]["features"][val_indices]
             labels_val = hdf5_file[patient]["labels"][val_indices]
             edge_idx_val = hdf5_file[patient]["edge_idx"][val_indices]
-        # nofile = len(os.listdir("/proc/" + str(os.getpid()) + "/fd/"))
-        # self.logger.info(f"Nofile after hdf {nofile}")
+
         if sum(self.used_classes_dict.values()) < 3:
             (
                 features_train,
@@ -1389,7 +1398,6 @@ class HDFDatasetLoader:
         self.logger.info(
             f"End logging of memory: {meminfo_table} for {patient}"
         )
-        # self.logger.info(f"Resource limit {resource.getrlimit(resource.RLIMIT_NOFILE)}")
         nofile = len(os.listdir("/proc/" + str(os.getpid()) + "/fd/"))
         self.logger.info(f"Nofile exit {nofile}")
 
@@ -1505,7 +1513,6 @@ class GraphDataset:
             os.path.join(root, path) for path in os.listdir(root)
         ]
         self.root = root.rstrip("/")
-        print(self.root)
         self._load()
 
     def __len__(self) -> int:

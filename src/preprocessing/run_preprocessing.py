@@ -1,16 +1,26 @@
-import utils
+from utils.utils import (
+    get_annotation_files,
+    preprocess_dataset_all,
+    save_timeseries_array,
+)
 from pathlib import Path
 from argparse import ArgumentParser
 
-
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--raw_dataset_path", type=str)
-    parser.add_argument("--preprocessed_data_save_path", type=str)
-    parser.add_argument("--recordings_with_seizures_file_path", type=str)
+    parser.add_argument("--data_path", type=str, required=True)
+    parser.add_argument("--event_tables_path", type=str, required=True)
+    parser.add_argument("--preprocessed_edf_path", type=str, required=True)
+    parser.add_argument("--final_npy_path", type=str, required=True)
+    parser.add_argument("--annotation_files_path", type=str, required=True)
     args = parser.parse_args()
-    adult_data = args.raw_dataset_path
-    peprocessed_data = args.preprocessed_data_save_path
-    subject_seizures = Path("data/raw_dataset/RECORDS-WITH-SEIZURES")
-
-    utils.preprocess_dataset_seizures(subject_seizures, adult_data, peprocessed_data)
+    data_path = Path(args.data_path)
+    event_tables_path = Path(args.event_tables_path)
+    preprocessed_edf_path = Path(args.preprocessed_edf_path)
+    final_npy_path = Path(args.final_npy_path)
+    annotation_files_path = Path(args.annotation_files_path)
+    get_annotation_files(event_tables_path, annotation_files_path)
+    preprocess_dataset_all(
+        annotation_files_path, data_path, preprocessed_edf_path
+    )
+    save_timeseries_array(preprocessed_edf_path, final_npy_path)

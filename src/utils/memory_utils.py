@@ -45,7 +45,9 @@ class MemoryMonitor:
         keys = list(list(self.data.values())[0].keys())
         now = str(int(time.perf_counter() % 1e5))
         for pid, data in self.data.items():
-            table.append((now, str(pid)) + tuple(self.format(data[k]) for k in keys))
+            table.append(
+                (now, str(pid)) + tuple(self.format(data[k]) for k in keys)
+            )
         return tabulate(table, headers=["time", "PID"] + keys)
 
     def str(self):

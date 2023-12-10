@@ -3,9 +3,12 @@ import re
 import os
 import scipy
 import timeit
+import logging
+import torch
 import pandas as pd
 import numpy as np
 from pathlib import Path
+from typing import Union
 from sklearn.decomposition import PCA
 from mne_features.bivariate import compute_phase_lock_val, compute_spect_corr
 from typing import Union
@@ -100,19 +103,13 @@ def remove_channels_duplicate(ch_name):
 
 def remove_repeating_pairs(cleared_ch_names):
     repeating_chs = []
-    for pair in cleared_ch_names:
-        ch_1, ch_2, *_ = pair.split(sep="-")
-        for pair_2 in cleared_ch_names:
-            if pair_2 == pair:
-                continue
-            if ch_1 in pair_2 and ch_2 in pair_2:
+    for i, pair in enumerate(cleared_ch_names):
+        for pair_2 in cleared_ch_names[i + 1 :]:
+            if set(pair.split("-")) == set(pair_2.split("-")):
                 repeating_chs.append(pair_2)
                 break
 
-    if repeating_chs:
-        return repeating_chs[0]
-    else:
-        return None
+    return repeating_chs[0] if repeating_chs else None
 
 
 def reorder_channels_chbmit(raw):
@@ -256,9 +253,8 @@ def preprocess_dataset_seizures(
             continue
 
         reorder_channels_chbmit(raw_file)
-
         raw_instance = run_preprocessing(
-            raw_file, apply_pca=False, avg_ref=True, freq_l=0.5, freq_h=30.0
+            raw_file, apply_pca=True, avg_ref=True, freq_l=0.5, freq_h=30.0
         )
         raw_instance = raw_file
         save_path = os.path.join(preprocessed_dirpath, subject)
@@ -271,16 +267,18 @@ def preprocess_dataset_seizures(
 def preprocess_dataset_all(
     subjects_with_seizures_path, dataset_path, preprocessed_dirpath
 ):
+    """Runs full preprocessing on the dataset cointained in the folder.
+    Args:
+        subject_with_seizures_path: path to a text file containing recordings with seizures.
+        dataset_path: path to a folder containing all patient folders.
+        preprocessed_dirpath: path to folder in which preprocessed files will be saved.
+    """
     subjects_with_seizures = [
         subject[:-1]
         for subject in open(subjects_with_seizures_path, "r").readlines()
     ]
 
     for folder in os.listdir(dataset_path):
-        if not os.path.isdir(os.path.join(dataset_path, folder)):
-            print(os.path.isdir(os.path.join(dataset_path, folder)))
-            continue
-
         for file in os.listdir(os.path.join(dataset_path, folder)):
             if file.endswith(".edf"):
                 try:
@@ -379,7 +377,7 @@ def extract_training_data_and_labels_interictal(
     return final_array, labels, interictal_time_labels
 
 
-def extract_training_data_and_labels(
+def extract_training_data_and_labels_ictal_preictal(
     input_array,
     start_ev_array,
     stop_ev_array,
@@ -390,7 +388,8 @@ def extract_training_data_and_labels(
     ictal_overlap: int = 9,  # in seconds
     buffer_time: int = 5,  # in seconds
 ):
-    """Function to extract seizure periods and preictal perdiods into samples ready to be put into graph neural network."""
+    """Function to extract seizure periods and preictal perdiods into
+    samples ready to be put into graph neural network."""
     for n, start_ev in enumerate(start_ev_array):
         prev_event_time = (
             start_ev - stop_ev_array[n - 1] if n > 0 else start_ev
@@ -451,15 +450,9 @@ def extract_training_data_and_labels(
         seizure_event_labels = np.ones(seizure_features.shape[0])
 
         seizure_event_time_labels = np.full(seizure_features.shape[0], 0)
-        # if len(preictal_features.shape) != 4 or len(seizure_features.shape) != 4:
-        #     continue
 
         try:
-            if (
-                len(preictal_features.shape) == 4
-            ):  # and preictal_features.shape[0] == int(seizure_lookback/sample_timestep):
-                #  print(f"Adding correct preictal features to the dataset.", preictal_features.shape)
-
+            if len(preictal_features.shape) == 4:
                 full_preictal_features = np.concatenate(
                     (full_preictal_features, preictal_features)
                 )
@@ -484,11 +477,7 @@ def extract_training_data_and_labels(
                     (full_seizure_event_time_labels, seizure_event_time_labels)
                 )
         except NameError:
-            if (
-                len(preictal_features.shape) == 4
-            ):  # and preictal_features.shape[0] == int(seizure_lookback/sample_timestep):
-                # print(f"Adding correct preictal features to the dataset.", preictal_features.shape)
-
+            if len(preictal_features.shape) == 4:
                 full_preictal_features = preictal_features
                 full_preictal_event_labels = preictal_event_labels
                 full_preictal_event_time_labels = preictal_event_time_labels
@@ -509,7 +498,10 @@ def extract_training_data_and_labels(
             (full_preictal_event_time_labels, full_seizure_event_time_labels),
             axis=0,
         )
-    except UnboundLocalError:
+    except UnboundLocalError as e:
+        print(e)
+        print("No samples extracted")
+
         return (None, None, None)
 
     return (
@@ -608,6 +600,8 @@ def get_annotation_files(dataset_path, dst_path):
 
 
 def save_timeseries_array(ds_path, target_path):
+    """Save timeseries array from EDF files to NPY files.
+    Redundant, but kept for compatibility."""
     patient_folders = os.listdir(ds_path)
     for folder in patient_folders:
         patient_folder_path = os.path.join(ds_path, folder)
@@ -664,14 +658,10 @@ def plv_connectivity_old(sensors, data):
     return connectivity_matrix
 
 
-def create_recordings_plv_old(npy_dataset_path: str, dst_path: str) -> None:
-    """Calculates phase locking value (PLV) for each recording in a dataset and saves the results to disk.
+def create_recordings_plv(npy_dataset_path, dst_path):
+    """Creates PLV matrices for every recording in the dataset.
+    Legacy, used only in some preliminary experiments."""
 
-    Args:
-        npy_dataset_path (str): Path to the directory containing the dataset in .npy format.
-        dst_path (str): Path to the directory where the PLV results will be saved.
-    """
-    # Get list of patients in dataset directory
     patient_list = os.listdir(npy_dataset_path)
 
     # Create destination directory if it doesn't exist

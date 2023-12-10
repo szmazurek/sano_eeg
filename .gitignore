@@ -17,3 +17,7 @@ wandb_api_key.txt
 wandb/
 
 *checkpoints*/
+*results/
+plots/
+saved_res/
+checkpoints*/
