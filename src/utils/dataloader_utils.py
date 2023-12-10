@@ -789,7 +789,6 @@ class HDFDatasetLoader:
         self.logger.info("Created processed cache subfolders.")
         return path_list
 
-
     def __post_init__(self) -> None:
         self._check_arguments()
         self._logger_init()
@@ -1287,7 +1286,7 @@ class HDFDatasetLoader:
             features_val = hdf5_file[patient]["features"][val_indices]
             labels_val = hdf5_file[patient]["labels"][val_indices]
             edge_idx_val = hdf5_file[patient]["edge_idx"][val_indices]
-     
+
         if sum(self.used_classes_dict.values()) < 3:
             (
                 features_train,
@@ -1444,7 +1443,6 @@ class GraphDataset:
             os.path.join(root, path) for path in os.listdir(root)
         ]
         self.root = root.rstrip("/")
-        print(self.root)
         self._load()
 
     def __len__(self) -> int:

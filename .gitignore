@@ -15,5 +15,7 @@ wandb_api_key.txt
 .vscode
 *cache*
 wandb/
-
+*results/
+plots/
+saved_res/
 checkpoints*/
