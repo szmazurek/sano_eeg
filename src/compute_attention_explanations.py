@@ -13,7 +13,6 @@ import json
 import networkx as nx
 from torchmetrics.classification import MulticlassConfusionMatrix
 from sklearn.metrics import balanced_accuracy_score
-import seaborn as sns
 import matplotlib as mpl
 from statistics import mean, stdev
 from torch_geometric.explain import AttentionExplainer, Explainer, ModelConfig
@@ -30,6 +29,7 @@ def compute_attention_explanations(args):
 
     if os.path.exists(save_dir_att):
         print("Save directory already exists")
+        print(args.save_dir_att)
         return
     os.makedirs(save_dir_att)
     fold_list = os.listdir(checkpoint_dir)
