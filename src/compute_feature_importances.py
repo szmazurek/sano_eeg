@@ -51,7 +51,7 @@ def compute_feature_importances(args):
         dataset = GraphDataset(data_fold_list[i])
         n_classes = 3
         features_shape = dataset[0].x.shape[-1]
-
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = GATv2Lightning.load_from_checkpoint(
             checkpoint_path,
             in_features=features_shape,
@@ -66,7 +66,7 @@ def compute_feature_importances(args):
             norm_method=norm_method,
             lr=lr,
             weight_decay=weight_decay,
-            map_location=torch.device("cpu"),
+            map_location=device,
         )
 
         dataset = GraphDataset(data_fold_list[i])
@@ -99,8 +99,7 @@ def compute_feature_importances(args):
             edge_mask_type="object",
         )
         for n, batch in enumerate(loader):
-            batch_unpacked = batch
-
+            batch_unpacked = batch.to(device)
             explanation = explainer(
                 x=batch_unpacked.x,
                 edge_index=batch_unpacked.edge_index,
