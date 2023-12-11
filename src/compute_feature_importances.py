@@ -80,10 +80,10 @@ def compute_feature_importances(args):
         )
 
         gnn_explainer = GNNExplainer(epochs=100, lr=0.01)
-        sum_masks = torch.zeros((18, 10))
-        interictal_masks = torch.zeros((18, 10))
-        ictal_masks = torch.zeros((18, 10))
-        preictal_masks = torch.zeros((18, 10))
+        sum_masks = torch.zeros((18, 10)).to(device)
+        interictal_masks = torch.zeros((18, 10)).to(device)
+        ictal_masks = torch.zeros((18, 10)).to(device)
+        preictal_masks = torch.zeros((18, 10)).to(device)
         interictal_cntr = 0
         preictal_cntr = 0
         ictal_cntr = 0
@@ -121,7 +121,6 @@ def compute_feature_importances(args):
                 interictal_cntr += 1
             if n % 100 == 0 and n != 0:
                 print(f"Batch {n} done")
-                break
         sum_masks /= n + 1
         interictal_masks /= interictal_cntr
         ictal_masks /= ictal_cntr
