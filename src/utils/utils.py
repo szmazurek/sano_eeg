@@ -325,8 +325,7 @@ def prepare_timestep_array(array, timestep, overlap):
 
 
 def prepare_timestep_label(array, timestep, overlap):
-    """Preprocess input array of shape [n_nodes,feature_per_node,samples]
-    into [samples_count,n_nodes,feature_per_node,timestep]."""
+
     time_to_seizure = array.shape[2]
     seconds = [
         (time_to_seizure - i) / 256
